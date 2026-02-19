@@ -772,8 +772,8 @@ func writeJSONLFile(t *testing.T, path string, lines ...string) {
 	}
 }
 
-// makeWriteToolLine returns a Droid-format JSONL line with a Write tool_use for the given file.
-func makeWriteToolLine(t *testing.T, id, filePath string) string {
+// makeFileToolLine returns a Droid-format JSONL line with a file-modifying tool_use.
+func makeFileToolLine(t *testing.T, toolName, id, filePath string) string {
 	t.Helper()
 	innerMsg := mustMarshal(t, map[string]interface{}{
 		"role": "assistant",
@@ -781,7 +781,7 @@ func makeWriteToolLine(t *testing.T, id, filePath string) string {
 			{
 				"type":  "tool_use",
 				"id":    "toolu_" + id,
-				"name":  "Write",
+				"name":  toolName,
 				"input": map[string]string{"file_path": filePath},
 			},
 		},
@@ -794,26 +794,16 @@ func makeWriteToolLine(t *testing.T, id, filePath string) string {
 	return string(line)
 }
 
+// makeWriteToolLine returns a Droid-format JSONL line with a Write tool_use for the given file.
+func makeWriteToolLine(t *testing.T, id, filePath string) string {
+	t.Helper()
+	return makeFileToolLine(t, "Write", id, filePath)
+}
+
 // makeEditToolLine returns a Droid-format JSONL line with an Edit tool_use for the given file.
 func makeEditToolLine(t *testing.T, id, filePath string) string {
 	t.Helper()
-	innerMsg := mustMarshal(t, map[string]interface{}{
-		"role": "assistant",
-		"content": []map[string]interface{}{
-			{
-				"type":  "tool_use",
-				"id":    "toolu_" + id,
-				"name":  "Edit",
-				"input": map[string]string{"file_path": filePath},
-			},
-		},
-	})
-	line := mustMarshal(t, map[string]interface{}{
-		"type":    "message",
-		"id":      id,
-		"message": json.RawMessage(innerMsg),
-	})
-	return string(line)
+	return makeFileToolLine(t, "Edit", id, filePath)
 }
 
 // makeTaskToolUseLine returns a Droid-format JSONL line with a Task tool_use (spawning a subagent).

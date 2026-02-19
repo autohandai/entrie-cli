@@ -93,19 +93,13 @@ func (f *FactoryAIDroidAgent) ExtractPrompts(sessionRef string, fromOffset int) 
 
 // ExtractSummary extracts the last assistant message as a session summary.
 func (f *FactoryAIDroidAgent) ExtractSummary(sessionRef string) (string, error) {
-	lines, err := func() ([]transcript.Line, error) {
-		data, readErr := os.ReadFile(sessionRef) //nolint:gosec // Path comes from agent hook input
-		if readErr != nil {
-			return nil, fmt.Errorf("failed to read transcript: %w", readErr)
-		}
-		parsed, parseErr := ParseDroidTranscriptFromBytes(data)
-		if parseErr != nil {
-			return nil, fmt.Errorf("failed to parse transcript: %w", parseErr)
-		}
-		return parsed, nil
-	}()
+	data, err := os.ReadFile(sessionRef) //nolint:gosec // Path comes from agent hook input
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to read transcript: %w", err)
+	}
+	lines, err := ParseDroidTranscriptFromBytes(data)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse transcript: %w", err)
 	}
 
 	for i := len(lines) - 1; i >= 0; i-- {

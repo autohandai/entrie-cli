@@ -18,12 +18,6 @@ import (
 // TranscriptLine is an alias to the shared transcript.Line type.
 type TranscriptLine = transcript.Line
 
-// Type aliases for internal use.
-type (
-	assistantMessage = transcript.AssistantMessage
-	toolInput        = transcript.ToolInput
-)
-
 // droidEnvelope is the top-level structure of a Factory AI Droid JSONL line.
 // Droid wraps messages as {"type":"message","id":"...","message":{"role":"assistant","content":[...]}},
 // unlike Claude Code which uses {"type":"assistant","uuid":"...","message":{"content":[...]}}.
@@ -141,7 +135,7 @@ func ExtractModifiedFiles(lines []TranscriptLine) []string {
 			continue
 		}
 
-		var msg assistantMessage
+		var msg transcript.AssistantMessage
 		if err := json.Unmarshal(line.Message, &msg); err != nil {
 			continue
 		}
@@ -151,7 +145,7 @@ func ExtractModifiedFiles(lines []TranscriptLine) []string {
 				continue
 			}
 
-			var input toolInput
+			var input transcript.ToolInput
 			if err := json.Unmarshal(block.Input, &input); err != nil {
 				continue
 			}
@@ -379,14 +373,11 @@ func ExtractAllModifiedFilesFromTranscript(transcriptPath string, startLine int,
 		return nil, fmt.Errorf("failed to parse transcript: %w", err)
 	}
 
-	// Collect modified files from main agent
-	fileSet := make(map[string]bool)
-	var files []string
-	for _, f := range ExtractModifiedFiles(parsed) {
-		if !fileSet[f] {
-			fileSet[f] = true
-			files = append(files, f)
-		}
+	// Collect modified files from main agent (already deduplicated)
+	files := ExtractModifiedFiles(parsed)
+	fileSet := make(map[string]bool, len(files))
+	for _, f := range files {
+		fileSet[f] = true
 	}
 
 	// Find spawned subagents and collect their modified files
