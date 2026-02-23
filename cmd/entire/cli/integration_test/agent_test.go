@@ -1119,41 +1119,82 @@ func TestFactoryAIDroidHelperMethods(t *testing.T) {
 	})
 }
 
-// TestFactoryAIDroidSessionStubs verifies that stub methods return not-implemented errors.
-func TestFactoryAIDroidSessionStubs(t *testing.T) {
+// TestFactoryAIDroidSessionMethods verifies ReadSession, WriteSession, and GetSessionDir.
+func TestFactoryAIDroidSessionMethods(t *testing.T) {
 	t.Parallel()
 
-	t.Run("ReadSession returns not-implemented error", func(t *testing.T) {
+	t.Run("ReadSession reads and parses transcript", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		transcriptPath := filepath.Join(tmpDir, "transcript.jsonl")
+		content := `{"type":"message","id":"msg1","message":{"role":"user","content":[{"type":"text","text":"hello"}]}}
+{"type":"message","id":"msg2","message":{"role":"assistant","content":[{"type":"text","text":"hi"}]}}`
+		if err := os.WriteFile(transcriptPath, []byte(content), 0o644); err != nil {
+			t.Fatalf("failed to write transcript: %v", err)
+		}
+
+		ag, _ := agent.Get("factoryai-droid")
+		session, err := ag.ReadSession(&agent.HookInput{
+			SessionID:  "test",
+			SessionRef: transcriptPath,
+		})
+		if err != nil {
+			t.Fatalf("ReadSession() error = %v", err)
+		}
+		if session.SessionID != "test" {
+			t.Errorf("SessionID = %q, want %q", session.SessionID, "test")
+		}
+		if len(session.NativeData) == 0 {
+			t.Error("NativeData should not be empty")
+		}
+	})
+
+	t.Run("ReadSession errors on missing file", func(t *testing.T) {
 		t.Parallel()
 
 		ag, _ := agent.Get("factoryai-droid")
 		_, err := ag.ReadSession(&agent.HookInput{
 			SessionID:  "test",
-			SessionRef: "/tmp/test.jsonl",
+			SessionRef: "/nonexistent/path/transcript.jsonl",
 		})
 		if err == nil {
-			t.Error("ReadSession() should return an error for Factory AI Droid")
-		}
-		if !strings.Contains(err.Error(), "not implemented") {
-			t.Errorf("ReadSession() error = %q, want to contain 'not implemented'", err.Error())
+			t.Error("ReadSession() should error on missing file")
 		}
 	})
 
-	t.Run("WriteSession returns not-implemented error", func(t *testing.T) {
+	t.Run("WriteSession round-trips with ReadSession", func(t *testing.T) {
 		t.Parallel()
 
-		ag, _ := agent.Get("factoryai-droid")
-		err := ag.WriteSession(&agent.AgentSession{
-			SessionID:  "test",
-			AgentName:  "factoryai-droid",
-			SessionRef: "/tmp/test.jsonl",
-			NativeData: []byte("data"),
-		})
-		if err == nil {
-			t.Error("WriteSession() should return an error for Factory AI Droid")
+		tmpDir := t.TempDir()
+		originalPath := filepath.Join(tmpDir, "original.jsonl")
+		restoredPath := filepath.Join(tmpDir, "sub", "restored.jsonl")
+
+		content := `{"type":"message","id":"msg1","message":{"role":"user","content":[{"type":"text","text":"hello"}]}}`
+		if err := os.WriteFile(originalPath, []byte(content), 0o644); err != nil {
+			t.Fatalf("failed to write original: %v", err)
 		}
-		if !strings.Contains(err.Error(), "not implemented") {
-			t.Errorf("WriteSession() error = %q, want to contain 'not implemented'", err.Error())
+
+		ag, _ := agent.Get("factoryai-droid")
+		session, err := ag.ReadSession(&agent.HookInput{
+			SessionID:  "test",
+			SessionRef: originalPath,
+		})
+		if err != nil {
+			t.Fatalf("ReadSession() error = %v", err)
+		}
+
+		session.SessionRef = restoredPath
+		if err := ag.WriteSession(session); err != nil {
+			t.Fatalf("WriteSession() error = %v", err)
+		}
+
+		restored, err := os.ReadFile(restoredPath)
+		if err != nil {
+			t.Fatalf("failed to read restored: %v", err)
+		}
+		if string(restored) != content {
+			t.Errorf("round-trip mismatch:\n got: %q\nwant: %q", string(restored), content)
 		}
 	})
 

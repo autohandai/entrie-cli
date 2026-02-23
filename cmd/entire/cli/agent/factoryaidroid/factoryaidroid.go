@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"time"
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
@@ -128,14 +129,62 @@ func (f *FactoryAIDroidAgent) ResolveSessionFile(sessionDir, agentSessionID stri
 	return filepath.Join(sessionDir, agentSessionID+".jsonl")
 }
 
-// ReadSession is not implemented for Factory AI Droid.
-func (f *FactoryAIDroidAgent) ReadSession(_ *agent.HookInput) (*agent.AgentSession, error) {
-	return nil, errors.New("not implemented")
+// ReadSession reads a session from Factory AI Droid's storage (JSONL transcript file).
+// The session data is stored in NativeData as raw JSONL bytes.
+// ModifiedFiles is computed by parsing the transcript.
+func (f *FactoryAIDroidAgent) ReadSession(input *agent.HookInput) (*agent.AgentSession, error) {
+	if input.SessionRef == "" {
+		return nil, errors.New("session reference (transcript path) is required")
+	}
+
+	data, err := os.ReadFile(input.SessionRef)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read transcript: %w", err)
+	}
+
+	lines, err := ParseDroidTranscriptFromBytes(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse transcript: %w", err)
+	}
+
+	return &agent.AgentSession{
+		SessionID:     input.SessionID,
+		AgentName:     f.Name(),
+		SessionRef:    input.SessionRef,
+		StartTime:     time.Now(),
+		NativeData:    data,
+		ModifiedFiles: ExtractModifiedFiles(lines),
+	}, nil
 }
 
-// WriteSession is not implemented for Factory AI Droid.
-func (f *FactoryAIDroidAgent) WriteSession(_ *agent.AgentSession) error {
-	return errors.New("not implemented")
+// WriteSession writes a session to Factory AI Droid's storage (JSONL transcript file).
+// Uses the NativeData field which contains raw JSONL bytes.
+func (f *FactoryAIDroidAgent) WriteSession(session *agent.AgentSession) error {
+	if session == nil {
+		return errors.New("session is nil")
+	}
+
+	if session.AgentName != "" && session.AgentName != f.Name() {
+		return fmt.Errorf("session belongs to agent %q, not %q", session.AgentName, f.Name())
+	}
+
+	if session.SessionRef == "" {
+		return errors.New("session reference (transcript path) is required")
+	}
+
+	if len(session.NativeData) == 0 {
+		return errors.New("session has no native data to write")
+	}
+
+	if err := os.MkdirAll(filepath.Dir(session.SessionRef), 0o750); err != nil {
+		return fmt.Errorf("failed to create session directory: %w", err)
+	}
+
+	if err := os.WriteFile(session.SessionRef, session.NativeData, 0o600); err != nil {
+		return fmt.Errorf("failed to write transcript: %w", err)
+	}
+
+	return nil
 }
 
 // FormatResumeCommand returns the command to resume a Factory AI Droid session.

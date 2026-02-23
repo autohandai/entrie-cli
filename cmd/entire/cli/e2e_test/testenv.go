@@ -281,6 +281,7 @@ func (env *TestEnv) GitCommitWithShadowHooks(message string, files ...string) {
 		"ENTIRE_TEST_TTY=1",
 		"ENTIRE_TEST_CLAUDE_PROJECT_DIR="+filepath.Join(env.RepoDir, ".claude"),
 		"ENTIRE_TEST_GEMINI_PROJECT_DIR="+filepath.Join(env.RepoDir, ".gemini"),
+		"ENTIRE_TEST_DROID_PROJECT_DIR="+filepath.Join(env.RepoDir, ".factory"),
 	)
 	if output, err := prepCmd.CombinedOutput(); err != nil {
 		env.T.Logf("prepare-commit-msg output: %s", output)
@@ -322,6 +323,7 @@ func (env *TestEnv) GitCommitWithShadowHooks(message string, files ...string) {
 	postCmd.Env = append(os.Environ(),
 		"ENTIRE_TEST_CLAUDE_PROJECT_DIR="+filepath.Join(env.RepoDir, ".claude"),
 		"ENTIRE_TEST_GEMINI_PROJECT_DIR="+filepath.Join(env.RepoDir, ".gemini"),
+		"ENTIRE_TEST_DROID_PROJECT_DIR="+filepath.Join(env.RepoDir, ".factory"),
 	)
 	if output, err := postCmd.CombinedOutput(); err != nil {
 		env.T.Logf("post-commit output: %s", output)
@@ -362,6 +364,7 @@ func (env *TestEnv) GitCommitStagedWithShadowHooks(message string) {
 		"ENTIRE_TEST_TTY=1",
 		"ENTIRE_TEST_CLAUDE_PROJECT_DIR="+filepath.Join(env.RepoDir, ".claude"),
 		"ENTIRE_TEST_GEMINI_PROJECT_DIR="+filepath.Join(env.RepoDir, ".gemini"),
+		"ENTIRE_TEST_DROID_PROJECT_DIR="+filepath.Join(env.RepoDir, ".factory"),
 	)
 	if output, err := prepCmd.CombinedOutput(); err != nil {
 		env.T.Logf("prepare-commit-msg output: %s", output)
@@ -403,6 +406,7 @@ func (env *TestEnv) GitCommitStagedWithShadowHooks(message string) {
 	postCmd.Env = append(os.Environ(),
 		"ENTIRE_TEST_CLAUDE_PROJECT_DIR="+filepath.Join(env.RepoDir, ".claude"),
 		"ENTIRE_TEST_GEMINI_PROJECT_DIR="+filepath.Join(env.RepoDir, ".gemini"),
+		"ENTIRE_TEST_DROID_PROJECT_DIR="+filepath.Join(env.RepoDir, ".factory"),
 	)
 	if output, err := postCmd.CombinedOutput(); err != nil {
 		env.T.Logf("post-commit output: %s", output)
@@ -435,6 +439,7 @@ func (env *TestEnv) GitCommitWithTrailerRemoved(message string, files ...string)
 		"ENTIRE_TEST_TTY=1",
 		"ENTIRE_TEST_CLAUDE_PROJECT_DIR="+filepath.Join(env.RepoDir, ".claude"),
 		"ENTIRE_TEST_GEMINI_PROJECT_DIR="+filepath.Join(env.RepoDir, ".gemini"),
+		"ENTIRE_TEST_DROID_PROJECT_DIR="+filepath.Join(env.RepoDir, ".factory"),
 	)
 	if output, err := prepCmd.CombinedOutput(); err != nil {
 		env.T.Logf("prepare-commit-msg output: %s", output)
@@ -493,6 +498,7 @@ func (env *TestEnv) GitCommitWithTrailerRemoved(message string, files ...string)
 	postCmd.Env = append(os.Environ(),
 		"ENTIRE_TEST_CLAUDE_PROJECT_DIR="+filepath.Join(env.RepoDir, ".claude"),
 		"ENTIRE_TEST_GEMINI_PROJECT_DIR="+filepath.Join(env.RepoDir, ".gemini"),
+		"ENTIRE_TEST_DROID_PROJECT_DIR="+filepath.Join(env.RepoDir, ".factory"),
 	)
 	if output, err := postCmd.CombinedOutput(); err != nil {
 		env.T.Logf("post-commit output: %s", output)

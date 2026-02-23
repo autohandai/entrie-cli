@@ -394,9 +394,8 @@ func (r *FactoryAIDroidRunner) RunPromptWithTools(ctx context.Context, workDir s
 		"-o", "text",
 	}
 
-	if len(tools) > 0 {
-		args = append(args, "--enabled-tools", strings.Join(tools, ","))
-	}
+	// Droid uses its own permission system (.factory/settings.json), not --enabled-tools.
+	// E2E tests pass Claude-specific tool names that Droid doesn't recognize.
 
 	if r.Model != "" {
 		args = append(args, "-m", r.Model)
@@ -410,6 +409,13 @@ func (r *FactoryAIDroidRunner) RunPromptWithTools(ctx context.Context, workDir s
 	//nolint:gosec // args are constructed from trusted config, not user input
 	cmd := exec.CommandContext(ctx, "droid", args...)
 	cmd.Dir = workDir
+
+	// Prevent TTY prompts in git hooks during agent-initiated commits.
+	// Without this, the prepare-commit-msg hook detects Droid's inherited TTY
+	// and blocks waiting for user input on the trailer confirmation prompt.
+	cmd.Env = append(os.Environ(),
+		"ENTIRE_TEST_TTY=0",
+	)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

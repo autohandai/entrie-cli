@@ -201,6 +201,182 @@ func TestGetSessionDir(t *testing.T) {
 	}
 }
 
+// --- ReadSession / WriteSession tests ---
+
+func TestReadSession(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	transcriptPath := filepath.Join(tmpDir, "transcript.jsonl")
+
+	// Write a Droid-format JSONL transcript with a file-modifying tool call
+	content := `{"type":"message","id":"msg1","message":{"role":"user","content":[{"type":"text","text":"create a file"}]}}
+{"type":"message","id":"msg2","message":{"role":"assistant","content":[{"type":"tool_use","name":"Write","input":{"file_path":"hello.txt","content":"hi"}}]}}`
+	if err := os.WriteFile(transcriptPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("failed to write transcript: %v", err)
+	}
+
+	ag := &FactoryAIDroidAgent{}
+	session, err := ag.ReadSession(&agent.HookInput{
+		SessionID:  "test-session-123",
+		SessionRef: transcriptPath,
+	})
+	if err != nil {
+		t.Fatalf("ReadSession() error = %v", err)
+	}
+
+	if session.SessionID != "test-session-123" {
+		t.Errorf("SessionID = %q, want %q", session.SessionID, "test-session-123")
+	}
+	if session.AgentName != agent.AgentNameFactoryAIDroid {
+		t.Errorf("AgentName = %q, want %q", session.AgentName, agent.AgentNameFactoryAIDroid)
+	}
+	if session.SessionRef != transcriptPath {
+		t.Errorf("SessionRef = %q, want %q", session.SessionRef, transcriptPath)
+	}
+	if len(session.NativeData) == 0 {
+		t.Error("NativeData should not be empty")
+	}
+	if len(session.ModifiedFiles) == 0 {
+		t.Error("ModifiedFiles should contain at least one file")
+	}
+}
+
+func TestReadSession_EmptyRef(t *testing.T) {
+	t.Parallel()
+	ag := &FactoryAIDroidAgent{}
+	_, err := ag.ReadSession(&agent.HookInput{SessionID: "test"})
+	if err == nil {
+		t.Error("ReadSession() should error on empty SessionRef")
+	}
+}
+
+func TestReadSession_MissingFile(t *testing.T) {
+	t.Parallel()
+	ag := &FactoryAIDroidAgent{}
+	_, err := ag.ReadSession(&agent.HookInput{
+		SessionID:  "test",
+		SessionRef: "/nonexistent/path/transcript.jsonl",
+	})
+	if err == nil {
+		t.Error("ReadSession() should error on missing file")
+	}
+}
+
+func TestWriteSession(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	// Write to a nested path to test directory creation
+	transcriptPath := filepath.Join(tmpDir, "sessions", "project", "transcript.jsonl")
+	nativeData := []byte(`{"type":"message","id":"msg1","message":{"role":"user","content":"hello"}}`)
+
+	ag := &FactoryAIDroidAgent{}
+	err := ag.WriteSession(&agent.AgentSession{
+		SessionID:  "test-session-456",
+		AgentName:  agent.AgentNameFactoryAIDroid,
+		SessionRef: transcriptPath,
+		NativeData: nativeData,
+	})
+	if err != nil {
+		t.Fatalf("WriteSession() error = %v", err)
+	}
+
+	// Verify file was written correctly
+	written, err := os.ReadFile(transcriptPath)
+	if err != nil {
+		t.Fatalf("failed to read written file: %v", err)
+	}
+	if string(written) != string(nativeData) {
+		t.Errorf("written data = %q, want %q", string(written), string(nativeData))
+	}
+}
+
+func TestWriteSession_NilSession(t *testing.T) {
+	t.Parallel()
+	ag := &FactoryAIDroidAgent{}
+	if err := ag.WriteSession(nil); err == nil {
+		t.Error("WriteSession(nil) should error")
+	}
+}
+
+func TestWriteSession_WrongAgent(t *testing.T) {
+	t.Parallel()
+	ag := &FactoryAIDroidAgent{}
+	err := ag.WriteSession(&agent.AgentSession{
+		AgentName:  "claude-code",
+		SessionRef: "/tmp/test.jsonl",
+		NativeData: []byte("data"),
+	})
+	if err == nil {
+		t.Error("WriteSession() should error for wrong agent name")
+	}
+}
+
+func TestWriteSession_EmptyRef(t *testing.T) {
+	t.Parallel()
+	ag := &FactoryAIDroidAgent{}
+	err := ag.WriteSession(&agent.AgentSession{
+		AgentName:  agent.AgentNameFactoryAIDroid,
+		NativeData: []byte("data"),
+	})
+	if err == nil {
+		t.Error("WriteSession() should error on empty SessionRef")
+	}
+}
+
+func TestWriteSession_EmptyNativeData(t *testing.T) {
+	t.Parallel()
+	ag := &FactoryAIDroidAgent{}
+	err := ag.WriteSession(&agent.AgentSession{
+		AgentName:  agent.AgentNameFactoryAIDroid,
+		SessionRef: "/tmp/test.jsonl",
+	})
+	if err == nil {
+		t.Error("WriteSession() should error on empty NativeData")
+	}
+}
+
+func TestReadWriteSession_RoundTrip(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	originalPath := filepath.Join(tmpDir, "original.jsonl")
+	restoredPath := filepath.Join(tmpDir, "restored.jsonl")
+
+	content := `{"type":"message","id":"msg1","message":{"role":"user","content":[{"type":"text","text":"hello"}]}}
+{"type":"message","id":"msg2","message":{"role":"assistant","content":[{"type":"text","text":"hi there"}]}}`
+	if err := os.WriteFile(originalPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("failed to write original: %v", err)
+	}
+
+	ag := &FactoryAIDroidAgent{}
+
+	// Read from original location
+	session, err := ag.ReadSession(&agent.HookInput{
+		SessionID:  "round-trip-test",
+		SessionRef: originalPath,
+	})
+	if err != nil {
+		t.Fatalf("ReadSession() error = %v", err)
+	}
+
+	// Write to new location
+	session.SessionRef = restoredPath
+	if err := ag.WriteSession(session); err != nil {
+		t.Fatalf("WriteSession() error = %v", err)
+	}
+
+	// Verify content matches
+	restored, err := os.ReadFile(restoredPath)
+	if err != nil {
+		t.Fatalf("failed to read restored: %v", err)
+	}
+	if string(restored) != content {
+		t.Errorf("round-trip mismatch:\n got: %q\nwant: %q", string(restored), content)
+	}
+}
+
 // TestGetSessionDir_EnvOverride cannot use t.Parallel() due to t.Setenv.
 func TestGetSessionDir_EnvOverride(t *testing.T) {
 	ag := &FactoryAIDroidAgent{}
