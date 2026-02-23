@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/entireio/cli/cmd/entire/cli/checkpoint"
 	"github.com/entireio/cli/cmd/entire/cli/strategy"
 	"github.com/entireio/cli/cmd/entire/cli/trail"
 
@@ -268,8 +267,8 @@ func runTrailCreate(w, errW io.Writer, title, description, base, branch, statusS
 		return fmt.Errorf("failed to generate trail ID: %w", err)
 	}
 
-	// Get git author
-	authorName, _ := checkpoint.GetGitAuthorFromRepo(repo)
+	// Get author (GitHub username, falls back to git user.name)
+	authorName := getTrailAuthor(repo)
 
 	now := time.Now()
 	metadata := &trail.Metadata{
@@ -469,7 +468,7 @@ func AutoCreateTrail(repo *git.Repository, branchName, baseBranch, prompt string
 		return fmt.Errorf("failed to generate trail ID: %w", err)
 	}
 
-	authorName, _ := checkpoint.GetGitAuthorFromRepo(repo)
+	authorName := getTrailAuthor(repo)
 	now := time.Now()
 
 	title := titleFromPrompt(prompt)
@@ -621,6 +620,21 @@ func runTrailCreateInteractive(title, description, branch, statusStr *string) er
 		*branch = suggested
 	}
 	return nil
+}
+
+// getTrailAuthor returns the GitHub username for the trail author.
+// Falls back to git user.name if gh CLI is unavailable or not authenticated.
+func getTrailAuthor(repo *git.Repository) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "gh", "api", "user", "-q", ".login")
+	if output, err := cmd.Output(); err == nil {
+		if login := strings.TrimSpace(string(output)); login != "" {
+			return login
+		}
+	}
+	name, _ := strategy.GetGitAuthorFromRepo(repo)
+	return name
 }
 
 // slugifyTitle converts a title string into a branch-friendly slug.
