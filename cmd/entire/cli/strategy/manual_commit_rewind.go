@@ -685,7 +685,6 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint, force bool) ([
 			RepoPath:   repoRoot,
 			SessionRef: sessionFile,
 			NativeData: content.Transcript,
-			ExportData: content.ExportData,
 		}
 		if writeErr := sessionAgent.WriteSession(agentSession); writeErr != nil {
 			if totalSessions > 1 {
@@ -699,6 +698,7 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint, force bool) ([
 			SessionID: sessionID,
 			Agent:     sessionAgent.Type(),
 			Prompt:    promptPreview,
+			CreatedAt: content.Metadata.CreatedAt,
 		})
 	}
 

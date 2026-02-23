@@ -21,6 +21,10 @@ import (
 const (
 	// SessionStateDirName is the directory name for session state files within git common dir.
 	SessionStateDirName = "entire-sessions"
+
+	// StaleSessionThreshold is the duration after which an ended session is considered stale
+	// and will be automatically deleted during load/list operations.
+	StaleSessionThreshold = 7 * 24 * time.Hour
 )
 
 // State represents the state of an active session.
@@ -205,6 +209,13 @@ func (s *State) NormalizeAfterLoad() {
 	}
 }
 
+// IsStale returns true when the last time a session saw interaction exceeds StaleSessionThreshold.
+// If LastInteractionTime isn't set, we don't consider a session stale to avoid aggressively
+// deleting things.
+func (s *State) IsStale() bool {
+	return s.LastInteractionTime != nil && time.Since(*s.LastInteractionTime) > StaleSessionThreshold
+}
+
 // StateStore provides low-level operations for managing session state files.
 //
 // StateStore is a primitive for session state persistence. It is NOT the same as
@@ -237,10 +248,9 @@ func NewStateStoreWithDir(stateDir string) *StateStore {
 }
 
 // Load loads the session state for the given session ID.
-// Returns (nil, nil) when session file doesn't exist (not an error condition).
+// Returns (nil, nil) when session file doesn't exist or session is stale (not an error condition).
+// Stale sessions (ended longer than StaleSessionThreshold ago) are automatically deleted.
 func (s *StateStore) Load(ctx context.Context, sessionID string) (*State, error) {
-	_ = ctx // Reserved for future use
-
 	// Validate session ID to prevent path traversal
 	if err := validation.ValidateSessionID(sessionID); err != nil {
 		return nil, fmt.Errorf("invalid session ID: %w", err)
@@ -261,6 +271,16 @@ func (s *StateStore) Load(ctx context.Context, sessionID string) (*State, error)
 		return nil, fmt.Errorf("failed to unmarshal session state: %w", err)
 	}
 	state.NormalizeAfterLoad()
+
+	if state.IsStale() {
+		logCtx := logging.WithComponent(ctx, "session")
+		logging.Debug(logCtx, "deleting stale session state",
+			slog.String("session_id", sessionID),
+		)
+		_ = s.Clear(ctx, sessionID) //nolint:errcheck // best-effort cleanup of stale session
+		return nil, nil             //nolint:nilnil // stale session treated as not found
+	}
+
 	return &state, nil
 }
 
@@ -326,8 +346,6 @@ func (s *StateStore) RemoveAll() error {
 
 // List returns all session states.
 func (s *StateStore) List(ctx context.Context) ([]*State, error) {
-	_ = ctx // Reserved for future use
-
 	entries, err := os.ReadDir(s.stateDir)
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -351,7 +369,7 @@ func (s *StateStore) List(ctx context.Context) ([]*State, error) {
 			continue // Skip corrupted state files
 		}
 		if state == nil {
-			continue
+			continue // Not found or stale (Load handles cleanup)
 		}
 
 		states = append(states, state)

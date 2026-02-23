@@ -2,7 +2,6 @@ package cli
 
 import (
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,13 +31,7 @@ func (m *mockLifecycleAgent) Description() string                    { return "M
 func (m *mockLifecycleAgent) IsPreview() bool                        { return false }
 func (m *mockLifecycleAgent) DetectPresence() (bool, error)          { return false, nil }
 func (m *mockLifecycleAgent) ProtectedDirs() []string                { return nil }
-func (m *mockLifecycleAgent) HookNames() []string                    { return nil }
 func (m *mockLifecycleAgent) GetSessionID(_ *agent.HookInput) string { return "" }
-
-//nolint:nilnil // Mock implementation
-func (m *mockLifecycleAgent) ParseHookEvent(_ string, _ io.Reader) (*agent.Event, error) {
-	return nil, nil
-}
 
 func (m *mockLifecycleAgent) ReadTranscript(_ string) ([]byte, error) {
 	if m.transcriptErr != nil {

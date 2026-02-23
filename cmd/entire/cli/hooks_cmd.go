@@ -23,12 +23,15 @@ func newHooksCmd() *cobra.Command {
 	cmd.AddCommand(newHooksGitCmd())
 
 	// Dynamically add agent hook subcommands
+	// Each agent that implements HookSupport gets its own subcommand tree
 	for _, agentName := range agent.List() {
 		ag, err := agent.Get(agentName)
 		if err != nil {
 			continue
 		}
-		cmd.AddCommand(newAgentHooksCmd(agentName, ag))
+		if handler, ok := ag.(agent.HookSupport); ok {
+			cmd.AddCommand(newAgentHooksCmd(agentName, handler))
+		}
 	}
 
 	return cmd

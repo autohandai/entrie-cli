@@ -274,3 +274,88 @@ func TestOpenCodeMultiTurnCondensation(t *testing.T) {
 		},
 	})
 }
+
+// TestOpenCodeResumedSessionAfterCommit verifies that resuming an OpenCode session
+// after a commit correctly creates a checkpoint for the second turn.
+//
+// Scenario:
+//  1. Turn 1: create new file → checkpoint → user commits (condensation)
+//  2. Turn 2 (resumed): modify the now-tracked file → checkpoint should be created
+func TestOpenCodeResumedSessionAfterCommit(t *testing.T) {
+	t.Parallel()
+
+	RunForAllStrategies(t, func(t *testing.T, env *TestEnv, strategyName string) {
+		env.InitEntireWithAgent(strategyName, agent.AgentNameOpenCode)
+
+		session := env.NewOpenCodeSession()
+		transcriptPath := session.TranscriptPath
+
+		// === Turn 1: Create a new file ===
+		if err := env.SimulateOpenCodeSessionStart(session.ID, transcriptPath); err != nil {
+			t.Fatalf("session-start error: %v", err)
+		}
+		if err := env.SimulateOpenCodeTurnStart(session.ID, transcriptPath, "Create app.go"); err != nil {
+			t.Fatalf("turn-start 1 error: %v", err)
+		}
+
+		env.WriteFile("app.go", "package main\nfunc main() {}")
+		session.CreateOpenCodeTranscript("Create app.go", []FileChange{
+			{Path: "app.go", Content: "package main\nfunc main() {}"},
+		})
+
+		if err := env.SimulateOpenCodeTurnEnd(session.ID, transcriptPath); err != nil {
+			t.Fatalf("turn-end 1 error: %v", err)
+		}
+
+		points1 := env.GetRewindPoints()
+		if len(points1) == 0 {
+			t.Fatal("expected rewind point after turn 1")
+		}
+
+		// === User commits (triggers condensation) ===
+		// For auto-commit, turn-end already committed the file.
+		// For manual-commit, user commits manually.
+		if strategyName == strategy.StrategyNameManualCommit {
+			env.GitCommitWithShadowHooks("Create app", "app.go")
+		}
+
+		// Verify condensation happened
+		checkpointID := env.TryGetLatestCheckpointID()
+		if checkpointID == "" {
+			t.Fatal("expected checkpoint on metadata branch after commit")
+		}
+
+		// === Turn 2 (resumed): Modify the now-tracked file ===
+		if err := env.SimulateOpenCodeTurnStart(session.ID, transcriptPath, "Add color output"); err != nil {
+			t.Fatalf("turn-start 2 error: %v", err)
+		}
+
+		env.WriteFile("app.go", "package main\nimport \"fmt\"\nfunc main() { fmt.Println(\"hello\") }")
+		session.CreateOpenCodeTranscript("Add color output", []FileChange{
+			{Path: "app.go", Content: "package main\nimport \"fmt\"\nfunc main() { fmt.Println(\"hello\") }"},
+		})
+
+		if err := env.SimulateOpenCodeTurnEnd(session.ID, transcriptPath); err != nil {
+			t.Fatalf("turn-end 2 error: %v", err)
+		}
+
+		// === Verify: a new checkpoint was created for turn 2 ===
+		points2 := env.GetRewindPoints()
+		if len(points2) == 0 {
+			t.Fatal("expected rewind point after turn 2 (resumed session), got none")
+		}
+
+		// For manual-commit: commit turn 2 and verify second condensation
+		if strategyName == strategy.StrategyNameManualCommit {
+			env.GitCommitWithShadowHooks("Add color output", "app.go")
+
+			checkpointID2 := env.TryGetLatestCheckpointID()
+			if checkpointID2 == "" {
+				t.Fatal("expected second checkpoint on metadata branch after turn 2 commit")
+			}
+			if checkpointID2 == checkpointID {
+				t.Error("second checkpoint ID should differ from first")
+			}
+		}
+	})
+}

@@ -1,6 +1,6 @@
 # Entire CLI
 
-Entire hooks into your git workflow to capture AI agent sessions on every push. Sessions are indexed alongside commits, creating a searchable record of how code was written in your repo.
+Entire hooks into your Git workflow to capture AI agent sessions as you work. Sessions are indexed alongside commits, creating a searchable record of how code was written in your repo.
 
 With Entire, you can:
 
@@ -180,7 +180,7 @@ Multiple AI sessions can run on the same commit. If you start a second session w
 
 | Flag                   | Description                                                        |
 |------------------------|--------------------------------------------------------------------|
-| `--agent <name>`       | AI agent to setup hooks for: `claude-code` (default) or `gemini`   |
+| `--agent <name>`       | AI agent to install hooks for: `claude-code` (default) or `gemini` |
 | `--force`, `-f`        | Force reinstall hooks (removes existing Entire hooks first)        |
 | `--local`              | Write settings to `settings.local.json` instead of `settings.json` |
 | `--project`            | Write settings to `settings.json` even if it already exists        |
@@ -291,7 +291,7 @@ Entire automatically redacts detected secrets (API keys, tokens, credentials) wh
 |--------------------------|-------------------------------------------------------------------------------------------|
 | "Not a git repository"   | Navigate to a Git repository first                                                        |
 | "Entire is disabled"     | Run `entire enable`                                                                       |
-| "No rewind points found" | Work with Claude Code and commit (manual-commit) or wait for agent response (auto-commit) |
+| "No rewind points found" | Work with your configured agent and commit (manual-commit) or wait for an agent response (auto-commit) |
 | "shadow branch conflict" | Run `entire reset --force`                                                                |
 
 ### SSH Authentication Errors

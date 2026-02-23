@@ -20,6 +20,7 @@ import (
 	"github.com/entireio/cli/cmd/entire/cli/paths"
 	"github.com/entireio/cli/cmd/entire/cli/session"
 	"github.com/entireio/cli/cmd/entire/cli/settings"
+	"github.com/entireio/cli/cmd/entire/cli/stringutil"
 	"github.com/entireio/cli/cmd/entire/cli/summarize"
 	"github.com/entireio/cli/cmd/entire/cli/textutil"
 	"github.com/entireio/cli/cmd/entire/cli/transcript"
@@ -200,11 +201,26 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 
 		// Scope transcript to this checkpoint's portion.
 		// For Claude Code (JSONL), CheckpointTranscriptStart is a line offset.
-		// For Gemini (JSON), CheckpointTranscriptStart is a message index.
+		// For Gemini/OpenCode (JSON), CheckpointTranscriptStart is a message index.
 		var scopedTranscript []byte
-		if state.AgentType == agent.AgentTypeGemini {
-			scopedTranscript = geminicli.SliceFromMessage(sessionData.Transcript, state.CheckpointTranscriptStart)
-		} else {
+		switch state.AgentType {
+		case agent.AgentTypeGemini:
+			scoped, sliceErr := geminicli.SliceFromMessage(sessionData.Transcript, state.CheckpointTranscriptStart)
+			if sliceErr != nil {
+				logging.Warn(summarizeCtx, "failed to scope Gemini transcript for summary",
+					slog.String("session_id", state.SessionID),
+					slog.String("error", sliceErr.Error()))
+			}
+			scopedTranscript = scoped
+		case agent.AgentTypeOpenCode:
+			scoped, sliceErr := opencode.SliceFromMessage(sessionData.Transcript, state.CheckpointTranscriptStart)
+			if sliceErr != nil {
+				logging.Warn(summarizeCtx, "failed to scope OpenCode transcript for summary",
+					slog.String("session_id", state.SessionID),
+					slog.String("error", sliceErr.Error()))
+			}
+			scopedTranscript = scoped
+		case agent.AgentTypeClaudeCode, agent.AgentTypeUnknown:
 			scopedTranscript = transcript.SliceFromLine(sessionData.Transcript, state.CheckpointTranscriptStart)
 		}
 		if len(scopedTranscript) > 0 {
@@ -241,7 +257,6 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 		TranscriptIdentifierAtStart: state.TranscriptIdentifierAtStart,
 		CheckpointTranscriptStart:   state.CheckpointTranscriptStart,
 		TokenUsage:                  sessionData.TokenUsage,
-		ExportData:                  sessionData.ExportData,
 		InitialAttribution:          attribution,
 		Summary:                     summary,
 	}); err != nil {
@@ -424,16 +439,6 @@ func (s *ManualCommitStrategy) extractSessionData(repo *git.Repository, shadowRe
 	// Use tracked files from session state (not all files in tree)
 	data.FilesTouched = filesTouched
 
-	// Read export data from local metadata directory (e.g., OpenCode SQLite export).
-	// This is written by lifecycle.go during TurnEnd and must be stored in the
-	// committed checkpoint so resume/rewind can re-import the session.
-	exportRelPath := metadataDir + "/" + paths.ExportDataFileName
-	if exportAbsPath, absErr := paths.AbsPath(exportRelPath); absErr == nil {
-		if exportBytes, readErr := os.ReadFile(exportAbsPath); readErr == nil && len(exportBytes) > 0 { //nolint:gosec // path from session metadata
-			data.ExportData = exportBytes
-		}
-	}
-
 	// Calculate token usage from the extracted transcript portion
 	if len(data.Transcript) > 0 {
 		data.TokenUsage = calculateTokenUsage(agentType, data.Transcript, checkpointTranscriptStart)
@@ -476,15 +481,6 @@ func (s *ManualCommitStrategy) extractSessionDataFromLiveTranscript(state *Sessi
 		data.FilesTouched = s.extractModifiedFilesFromLiveTranscript(state, state.CheckpointTranscriptStart)
 	}
 
-	// Read export data from local metadata directory
-	metadataDir := paths.SessionMetadataDirFromSessionID(state.SessionID)
-	exportRelPath := metadataDir + "/" + paths.ExportDataFileName
-	if exportAbsPath, absErr := paths.AbsPath(exportRelPath); absErr == nil {
-		if exportBytes, readErr := os.ReadFile(exportAbsPath); readErr == nil && len(exportBytes) > 0 { //nolint:gosec // path from session metadata
-			data.ExportData = exportBytes
-		}
-	}
-
 	// Calculate token usage from the extracted transcript portion
 	if len(data.Transcript) > 0 {
 		data.TokenUsage = calculateTokenUsage(state.AgentType, data.Transcript, state.CheckpointTranscriptStart)
@@ -495,10 +491,19 @@ func (s *ManualCommitStrategy) extractSessionDataFromLiveTranscript(state *Sessi
 
 // countTranscriptItems counts lines (JSONL) or messages (JSON) in a transcript.
 // For Claude Code and JSONL-based agents, this counts lines.
-// For Gemini CLI and JSON-based agents, this counts messages.
+// For Gemini CLI, OpenCode, and JSON-based agents, this counts messages.
 // Returns 0 if the content is empty or malformed.
 func countTranscriptItems(agentType agent.AgentType, content string) int {
 	if content == "" {
+		return 0
+	}
+
+	// OpenCode uses export JSON format with {"info": {...}, "messages": [...]}
+	if agentType == agent.AgentTypeOpenCode {
+		session, err := opencode.ParseExportSession([]byte(content))
+		if err == nil && session != nil {
+			return len(session.Messages)
+		}
 		return 0
 	}
 
@@ -711,11 +716,9 @@ func generateContextFromPrompts(prompts []string) []byte {
 	buf.WriteString("## User Prompts\n\n")
 
 	for i, prompt := range prompts {
-		// Truncate very long prompts for readability
-		displayPrompt := prompt
-		if len(displayPrompt) > 500 {
-			displayPrompt = displayPrompt[:500] + "..."
-		}
+		// Truncate very long prompts for readability.
+		// Use rune-based truncation to avoid splitting multi-byte UTF-8 characters (e.g. CJK).
+		displayPrompt := stringutil.TruncateRunes(prompt, 500, "...")
 		buf.WriteString(fmt.Sprintf("### Prompt %d\n\n", i+1))
 		buf.WriteString(displayPrompt)
 		buf.WriteString("\n\n")
