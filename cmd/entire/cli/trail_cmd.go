@@ -205,30 +205,35 @@ func runTrailCreate(w, errW io.Writer, title, description, base, branch, statusS
 		}
 	}
 
-	// Determine branch — create and checkout if needed
-	isDefault, currentBranch, _ := IsOnDefaultBranch() //nolint:errcheck // best-effort detection
+	// Determine branch
+	_, currentBranch, _ := IsOnDefaultBranch() //nolint:errcheck // best-effort detection
 	if branch == "" {
-		if !isDefault {
+		// Interactive: prompt for branch name with current branch as placeholder
+		placeholder := currentBranch
+		if placeholder == "" {
+			placeholder = "feat/my-feature"
+		}
+		var inputBranch string
+		form := NewAccessibleForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Title("Branch name").
+					Placeholder(placeholder).
+					Value(&inputBranch),
+			),
+		)
+		if formErr := form.Run(); formErr != nil {
+			return fmt.Errorf("form cancelled: %w", formErr)
+		}
+		inputBranch = strings.TrimSpace(inputBranch)
+		if inputBranch == "" {
+			// Use current branch if user just pressed enter
 			branch = currentBranch
 		} else {
-			// On default branch with no --branch flag: prompt for a new branch name
-			var inputBranch string
-			form := NewAccessibleForm(
-				huh.NewGroup(
-					huh.NewInput().
-						Title("Branch name").
-						Placeholder("feat/my-feature").
-						Value(&inputBranch),
-				),
-			)
-			if formErr := form.Run(); formErr != nil {
-				return fmt.Errorf("form cancelled: %w", formErr)
-			}
-			inputBranch = strings.TrimSpace(inputBranch)
-			if inputBranch == "" {
-				return errors.New("branch name is required")
-			}
 			branch = inputBranch
+		}
+		if branch == "" {
+			return errors.New("branch name is required")
 		}
 	}
 
