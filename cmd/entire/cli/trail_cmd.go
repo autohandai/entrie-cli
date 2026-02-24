@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/entireio/cli/cmd/entire/cli/logging"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
 	"github.com/entireio/cli/cmd/entire/cli/strategy"
 	"github.com/entireio/cli/cmd/entire/cli/trail"
@@ -382,11 +384,12 @@ func runTrailUpdate(w io.Writer, statusStr, title, description, branch string, l
 	// Interactive mode when no flags are provided
 	noFlags := statusStr == "" && title == "" && description == "" && labelAdd == nil && labelRemove == nil
 	if noFlags {
-		// Build status options with current value as default
-		// Exclude "done" (set on merge) and "closed" (requires permissions)
+		// Build status options with current value as default.
+		// Exclude "done" and "closed" unless the trail is already in that status
+		// (otherwise the select would silently reset to the first option).
 		var statusOptions []huh.Option[string]
 		for _, s := range trail.ValidStatuses() {
-			if s == trail.StatusDone || s == trail.StatusClosed {
+			if (s == trail.StatusDone || s == trail.StatusClosed) && s != metadata.Status {
 				continue
 			}
 			label := string(s)
@@ -497,7 +500,10 @@ func AutoCreateTrail(repo *git.Repository, branchName, baseBranch, prompt string
 		return fmt.Errorf("failed to create trail: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "[entire] Created trail for branch: %s\n", branchName)
+	logCtx := context.Background()
+	logging.Info(logCtx, "auto-created trail for branch",
+		slog.String("branch", branchName),
+		slog.String("trail_id", trailID.String()))
 	return nil
 }
 
@@ -635,6 +641,9 @@ func fetchTrailsBranch() {
 	refSpec := fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", branchName, branchName)
 	//nolint:gosec // G204: branchName is a constant from paths package
 	cmd := exec.CommandContext(ctx, "git", "fetch", "origin", refSpec)
+	// Ensure non-interactive fetch in hook/agent contexts
+	cmd.Stdin = nil
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	_ = cmd.Run() //nolint:errcheck // best-effort fetch
 }
 

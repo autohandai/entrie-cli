@@ -775,7 +775,8 @@ func autoCreateTrailOnTurnStart(prompt string) {
 	}
 
 	if err := AutoCreateTrail(repo, branchName, baseBranch, prompt); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to auto-create trail: %v\n", err)
+		ctx := context.Background()
+		logging.Warn(ctx, "failed to auto-create trail during turn start", slog.Any("error", err))
 	}
 }
 

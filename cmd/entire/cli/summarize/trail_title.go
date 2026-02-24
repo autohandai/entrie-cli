@@ -41,7 +41,7 @@ type TrailTitleResult struct {
 }
 
 // GenerateTrailTitle generates a title and description for a trail using the agent's
-// text generation capability. Returns nil if the agent doesn't support text generation.
+// text generation capability. Returns (nil, nil) if the agent doesn't support text generation.
 func GenerateTrailTitle(ctx context.Context, transcriptBytes []byte, filesTouched []string, agentType agent.AgentType) (*TrailTitleResult, error) {
 	// Get the active agent and check if it implements TextGenerator
 	ag, err := agent.GetByAgentType(agentType)
@@ -50,7 +50,8 @@ func GenerateTrailTitle(ctx context.Context, transcriptBytes []byte, filesTouche
 	}
 	gen, ok := ag.(agent.TextGenerator)
 	if !ok {
-		return nil, fmt.Errorf("agent %s does not support text generation", agentType)
+		// Agent does not support text generation: treat as non-fatal and return no result.
+		return nil, nil //nolint:nilnil // nil result signals "not supported", not an error
 	}
 
 	// Build condensed transcript (reuse existing infrastructure)
@@ -76,7 +77,7 @@ func GenerateTrailTitle(ctx context.Context, transcriptBytes []byte, filesTouche
 	cleaned := extractJSONFromMarkdown(rawResult)
 	var result TrailTitleResult
 	if err := json.Unmarshal([]byte(cleaned), &result); err != nil {
-		return nil, fmt.Errorf("failed to parse trail title JSON: %w (response: %s)", err, cleaned)
+		return nil, fmt.Errorf("failed to parse trail title JSON: %w", err)
 	}
 
 	return &result, nil

@@ -30,6 +30,12 @@ func pushSessionsBranchCommon(remote, branchName string) error {
 		return nil
 	}
 
+	return pushBranchIfNeeded(remote, branchName)
+}
+
+// pushBranchIfNeeded pushes a branch to the remote if it has unpushed changes.
+// Does not check any settings — callers are responsible for gating.
+func pushBranchIfNeeded(remote, branchName string) error {
 	repo, err := OpenRepository()
 	if err != nil {
 		return nil //nolint:nilerr // Hook must be silent on failure
@@ -49,7 +55,7 @@ func pushSessionsBranchCommon(remote, branchName string) error {
 		return nil
 	}
 
-	return doPushSessionsBranch(remote, branchName)
+	return doPushBranch(remote, branchName)
 }
 
 // hasUnpushedSessionsCommon checks if the local branch differs from the remote.
@@ -78,9 +84,9 @@ func isPushSessionsDisabled() bool {
 	return s.IsPushSessionsDisabled()
 }
 
-// doPushSessionsBranch pushes the sessions branch to the remote.
-func doPushSessionsBranch(remote, branchName string) error {
-	fmt.Fprintf(os.Stderr, "[entire] Pushing session logs to %s...\n", remote)
+// doPushBranch pushes the given branch to the remote with fetch+merge recovery.
+func doPushBranch(remote, branchName string) error {
+	fmt.Fprintf(os.Stderr, "[entire] Pushing %s to %s...\n", branchName, remote)
 
 	// Try pushing first
 	if err := tryPushSessionsCommon(remote, branchName); err == nil {
@@ -88,16 +94,16 @@ func doPushSessionsBranch(remote, branchName string) error {
 	}
 
 	// Push failed - likely non-fast-forward. Try to fetch and merge.
-	fmt.Fprintf(os.Stderr, "[entire] Syncing with remote session logs...\n")
+	fmt.Fprintf(os.Stderr, "[entire] Syncing %s with remote...\n", branchName)
 
 	if err := fetchAndMergeSessionsCommon(remote, branchName); err != nil {
-		fmt.Fprintf(os.Stderr, "[entire] Warning: couldn't sync sessions: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[entire] Warning: couldn't sync %s: %v\n", branchName, err)
 		return nil // Don't fail the main push
 	}
 
 	// Try pushing again after merge
 	if err := tryPushSessionsCommon(remote, branchName); err != nil {
-		fmt.Fprintf(os.Stderr, "[entire] Warning: failed to push sessions after sync: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[entire] Warning: failed to push %s after sync: %v\n", branchName, err)
 	}
 
 	return nil
@@ -204,9 +210,9 @@ func fetchAndMergeSessionsCommon(remote, branchName string) error {
 }
 
 // PushTrailsBranch pushes the entire/trails branch to the remote.
-// Reuses the same push/sync logic as session branches.
+// Trails are always pushed regardless of the push_sessions setting.
 func PushTrailsBranch(remote string) error {
-	return pushSessionsBranchCommon(remote, paths.TrailsBranchName)
+	return pushBranchIfNeeded(remote, paths.TrailsBranchName)
 }
 
 // createMergeCommitCommon creates a merge commit with multiple parents.

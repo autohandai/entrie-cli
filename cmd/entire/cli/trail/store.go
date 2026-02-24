@@ -218,7 +218,7 @@ func (s *Store) Read(trailID ID) (*Metadata, *Discussion, *Checkpoints, error) {
 }
 
 // FindByBranch finds a trail for the given branch name.
-// Returns nil, nil, nil if no trail exists for the branch.
+// Returns (nil, nil) if no trail exists for the branch.
 func (s *Store) FindByBranch(branchName string) (*Metadata, error) {
 	trails, err := s.List()
 	if err != nil {
@@ -300,8 +300,11 @@ func (s *Store) AddCheckpoint(trailID ID, ref CheckpointRef) error {
 		checkpoints = &Checkpoints{Checkpoints: []CheckpointRef{}}
 	}
 
-	// Prepend new ref (newest first)
-	checkpoints.Checkpoints = append([]CheckpointRef{ref}, checkpoints.Checkpoints...)
+	// Prepend new ref (newest first) without always allocating a new slice.
+	// Grow the slice by one, shift existing elements right, and insert at index 0.
+	checkpoints.Checkpoints = append(checkpoints.Checkpoints, CheckpointRef{})
+	copy(checkpoints.Checkpoints[1:], checkpoints.Checkpoints[:len(checkpoints.Checkpoints)-1])
+	checkpoints.Checkpoints[0] = ref
 
 	return s.Write(metadata, discussion, checkpoints)
 }
