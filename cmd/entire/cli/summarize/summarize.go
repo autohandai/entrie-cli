@@ -122,8 +122,8 @@ func BuildCondensedTranscriptFromBytes(content []byte, agentType agent.AgentType
 		return buildCondensedTranscriptFromDroid(content)
 	case agent.AgentTypeOpenCode:
 		return buildCondensedTranscriptFromOpenCode(content)
-	case agent.AgentTypeClaudeCode, agent.AgentTypeUnknown:
-		// Claude format - fall through to shared logic below
+	case agent.AgentTypeClaudeCode, agent.AgentTypeCursor, agent.AgentTypeUnknown:
+		// Claude/cursor format - fall through to shared logic below
 	}
 	// Claude format (JSONL) - handles Claude Code, Unknown, and any future agent types
 	lines, err := transcript.ParseFromBytes(content)

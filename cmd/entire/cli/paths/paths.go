@@ -33,7 +33,7 @@ const (
 	SettingsFileName         = "settings.json"
 )
 
-// MetadataBranchName is the orphan branch used by auto-commit and manual-commit strategies to store metadata
+// MetadataBranchName is the orphan branch used by manual-commit strategy to store metadata
 const MetadataBranchName = "entire/checkpoints/v1"
 
 // CheckpointPath returns the sharded storage path for a checkpoint ID.

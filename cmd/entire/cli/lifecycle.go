@@ -78,10 +78,8 @@ func handleLifecycleSessionStart(ag agent.Agent, event *agent.Event) error {
 
 	// Check for concurrent sessions and append count if any
 	strat := GetStrategy()
-	if concurrentChecker, ok := strat.(strategy.ConcurrentSessionChecker); ok {
-		if count, err := concurrentChecker.CountOtherActiveSessionsWithCheckpoints(event.SessionID); err == nil && count > 0 {
-			message += fmt.Sprintf("\n  %d other active conversation(s) in this workspace will also be included.\n  Use 'entire status' for more information.", count)
-		}
+	if count, err := strat.CountOtherActiveSessionsWithCheckpoints(event.SessionID); err == nil && count > 0 {
+		message += fmt.Sprintf("\n  %d other active conversation(s) in this workspace will also be included.\n  Use 'entire status' for more information.", count)
 	}
 
 	// Output informational message
@@ -131,17 +129,13 @@ func handleLifecycleTurnStart(ag agent.Agent, event *agent.Event) error {
 	}
 
 	// Ensure strategy setup and initialize session
-	strat := GetStrategy()
-
-	if err := strat.EnsureSetup(); err != nil {
+	if err := strategy.EnsureSetup(); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to ensure strategy setup: %v\n", err)
 	}
 
-	if initializer, ok := strat.(strategy.SessionInitializer); ok {
-		agentType := ag.Type()
-		if err := initializer.InitializeSession(sessionID, agentType, event.SessionRef, event.Prompt); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to initialize session state: %v\n", err)
-		}
+	strat := GetStrategy()
+	if err := strat.InitializeSession(sessionID, ag.Type(), event.SessionRef, event.Prompt); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to initialize session state: %v\n", err)
 	}
 
 	return nil
@@ -219,7 +213,6 @@ func handleLifecycleTurnEnd(ag agent.Agent, event *agent.Event) error {
 	var allPrompts []string
 	var summary string
 	var modifiedFiles []string
-	var newTranscriptPosition int
 
 	// Compute subagents directory for agents that support subagent extraction.
 	// Subagent transcripts live in <transcriptDir>/<modelSessionID>/subagents/
@@ -247,17 +240,12 @@ func handleLifecycleTurnEnd(ag agent.Agent, event *agent.Event) error {
 			} else {
 				modifiedFiles = files
 			}
-			// Get position from basic analyzer
-			if _, pos, posErr := analyzer.ExtractModifiedFilesFromOffset(transcriptRef, transcriptOffset); posErr == nil {
-				newTranscriptPosition = pos
-			}
 		} else {
 			// Fall back to basic extraction (main transcript only)
-			if files, pos, fileErr := analyzer.ExtractModifiedFilesFromOffset(transcriptRef, transcriptOffset); fileErr != nil {
+			if files, _, fileErr := analyzer.ExtractModifiedFilesFromOffset(transcriptRef, transcriptOffset); fileErr != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to extract modified files: %v\n", fileErr)
 			} else {
 				modifiedFiles = files
-				newTranscriptPosition = pos
 			}
 		}
 	}
@@ -398,12 +386,7 @@ func handleLifecycleTurnEnd(ag agent.Agent, event *agent.Event) error {
 		return fmt.Errorf("failed to save step: %w", err)
 	}
 
-	// Update session state transcript position for auto-commit strategy
-	if strat.Name() == strategy.StrategyNameAutoCommit && newTranscriptPosition > 0 {
-		updateAutoCommitTranscriptPosition(sessionID, newTranscriptPosition)
-	}
-
-	// Transition session phase and cleanup pre-prompt state
+	// Transition session phase and cleanup
 	transitionSessionTurnEnd(sessionID)
 	if cleanupErr := CleanupPrePromptState(sessionID); cleanupErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to cleanup pre-prompt state: %v\n", cleanupErr)
@@ -501,8 +484,10 @@ func handleLifecycleSubagentEnd(ag agent.Agent, event *agent.Event) error {
 		slog.String("subagent_id", event.SubagentID),
 	)
 
-	// Extract subagent type and description from tool input
-	subagentType, taskDescription := ParseSubagentTypeAndDescription(event.ToolInput)
+	if event.SubagentType == "" && event.TaskDescription == "" {
+		// Extract subagent type and description from tool input
+		event.SubagentType, event.TaskDescription = ParseSubagentTypeAndDescription(event.ToolInput)
+	}
 
 	// Determine subagent transcript path
 	transcriptDir := filepath.Dir(event.SessionRef)
@@ -603,8 +588,8 @@ func handleLifecycleSubagentEnd(ag agent.Agent, event *agent.Event) error {
 		CheckpointUUID:         checkpointUUID,
 		AuthorName:             author.Name,
 		AuthorEmail:            author.Email,
-		SubagentType:           subagentType,
-		TaskDescription:        taskDescription,
+		SubagentType:           event.SubagentType,
+		TaskDescription:        event.TaskDescription,
 		AgentType:              agentType,
 	}
 
@@ -626,7 +611,7 @@ func resolveTranscriptOffset(preState *PrePromptState, sessionID string) int {
 		return preState.TranscriptOffset
 	}
 
-	// Fall back to session state (e.g., auto-commit strategy updates it after each save)
+	// Fall back to session state
 	sessionState, loadErr := strategy.LoadSessionState(sessionID)
 	if loadErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load session state: %v\n", loadErr)
@@ -638,29 +623,6 @@ func resolveTranscriptOffset(preState *PrePromptState, sessionID string) int {
 	}
 
 	return 0
-}
-
-// updateAutoCommitTranscriptPosition updates the session state with the new transcript position
-// for the auto-commit strategy.
-func updateAutoCommitTranscriptPosition(sessionID string, newPosition int) {
-	sessionState, loadErr := strategy.LoadSessionState(sessionID)
-	if loadErr != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to load session state: %v\n", loadErr)
-		return
-	}
-	if sessionState == nil {
-		sessionState = &strategy.SessionState{
-			SessionID: sessionID,
-		}
-	}
-	sessionState.CheckpointTranscriptStart = newPosition
-	sessionState.StepCount++
-	if updateErr := strategy.SaveSessionState(sessionState); updateErr != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to update session state: %v\n", updateErr)
-	} else {
-		fmt.Fprintf(os.Stderr, "Updated session state: transcript position=%d, checkpoint=%d\n",
-			newPosition, sessionState.StepCount)
-	}
 }
 
 // createContextFile creates a context.md file for the session checkpoint.
@@ -718,10 +680,8 @@ func transitionSessionTurnEnd(sessionID string) {
 	// Always dispatch to strategy for turn-end handling. The strategy reads
 	// work items from state (e.g. TurnCheckpointIDs), not the action list.
 	strat := GetStrategy()
-	if handler, ok := strat.(strategy.TurnEndHandler); ok {
-		if err := handler.HandleTurnEnd(turnState); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: turn-end action dispatch failed: %v\n", err)
-		}
+	if err := strat.HandleTurnEnd(turnState); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: turn-end action dispatch failed: %v\n", err)
 	}
 
 	if updateErr := strategy.SaveSessionState(turnState); updateErr != nil {

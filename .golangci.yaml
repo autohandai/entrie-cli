@@ -108,6 +108,7 @@ linters:
         - github.com/go-git/go-git/v6/plumbing.EncodedObject
         - github.com/go-git/go-git/v6/storage.Storer
         - github.com/go-git/go-git/v6/plumbing/storer.EncodedObjectIter
+        - github.com/entireio/cli/e2e/agents.Session
         - github.com/go-git/go-billy/v6.Filesystem
     nolintlint:
       require-explanation: true
@@ -128,6 +129,16 @@ linters:
           - gosec
           - wrapcheck
           - forbidigo
+      - path: ^e2e/
+        linters:
+          - errcheck
+          - gochecknoinits
+          - goconst
+          - gosec
+          - noctx
+          - revive
+          - usetesting
+          - wrapcheck
       - path: ^test/workloads/
         linters:
           - wrapcheck

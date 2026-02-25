@@ -64,14 +64,21 @@ func (s *GitStore) WriteCommitted(ctx context.Context, opts WriteCommittedOption
 		return fmt.Errorf("failed to ensure sessions branch: %w", err)
 	}
 
-	// Get current branch tip and flatten tree
-	ref, entries, err := s.getSessionsBranchEntries()
+	// Get branch ref and root tree hash (O(1), no flatten)
+	parentHash, rootTreeHash, err := s.getSessionsBranchRef()
 	if err != nil {
 		return err
 	}
 
 	// Use sharded path: <id[:2]>/<id[2:]>/
 	basePath := opts.CheckpointID.Path() + "/"
+	checkpointPath := opts.CheckpointID.Path()
+
+	// Flatten only the checkpoint subtree (O(files in checkpoint))
+	entries, err := s.flattenCheckpointEntries(rootTreeHash, checkpointPath)
+	if err != nil {
+		return err
+	}
 
 	// Track task metadata path for commit trailer
 	var taskMetadataPath string
@@ -89,14 +96,14 @@ func (s *GitStore) WriteCommitted(ctx context.Context, opts WriteCommittedOption
 		return err
 	}
 
-	// Build and commit
-	newTreeHash, err := BuildTreeFromEntries(s.repo, entries)
+	// Build checkpoint subtree and splice into root (O(depth) tree surgery)
+	newTreeHash, err := s.spliceCheckpointSubtree(rootTreeHash, opts.CheckpointID, basePath, entries)
 	if err != nil {
 		return err
 	}
 
 	commitMsg := s.buildCommitMessage(opts, taskMetadataPath)
-	newCommitHash, err := s.createCommit(newTreeHash, ref.Hash(), commitMsg, opts.AuthorName, opts.AuthorEmail)
+	newCommitHash, err := s.createCommit(newTreeHash, parentHash, commitMsg, opts.AuthorName, opts.AuthorEmail)
 	if err != nil {
 		return err
 	}
@@ -110,30 +117,63 @@ func (s *GitStore) WriteCommitted(ctx context.Context, opts WriteCommittedOption
 	return nil
 }
 
-// getSessionsBranchEntries returns the sessions branch reference and flattened tree entries.
-func (s *GitStore) getSessionsBranchEntries() (*plumbing.Reference, map[string]object.TreeEntry, error) {
-	refName := plumbing.NewBranchReferenceName(paths.MetadataBranchName)
-	ref, err := s.repo.Reference(refName, true)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get sessions branch reference: %w", err)
-	}
-
-	parentCommit, err := s.repo.CommitObject(ref.Hash())
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get commit object: %w", err)
-	}
-
-	baseTree, err := parentCommit.Tree()
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get commit tree: %w", err)
-	}
-
+// flattenCheckpointEntries reads only the entries under a specific checkpoint path
+// from the sessions branch tree. This is O(files in checkpoint) instead of O(all checkpoints).
+// Returns an empty map if the checkpoint doesn't exist yet.
+func (s *GitStore) flattenCheckpointEntries(rootTreeHash plumbing.Hash, checkpointPath string) (map[string]object.TreeEntry, error) {
 	entries := make(map[string]object.TreeEntry)
-	if err := FlattenTree(s.repo, baseTree, "", entries); err != nil {
-		return nil, nil, err
+	if rootTreeHash == plumbing.ZeroHash {
+		return entries, nil
 	}
 
-	return ref, entries, nil
+	rootTree, err := s.repo.TreeObject(rootTreeHash)
+	if err != nil {
+		if errors.Is(err, plumbing.ErrObjectNotFound) {
+			return entries, nil // Tree doesn't exist yet
+		}
+		return nil, fmt.Errorf("failed to read root tree %s: %w", rootTreeHash, err)
+	}
+
+	subtree, err := rootTree.Tree(checkpointPath)
+	if err != nil {
+		return entries, nil //nolint:nilerr // Checkpoint doesn't exist yet
+	}
+
+	// Flatten just this subtree with the full path prefix
+	if err := FlattenTree(s.repo, subtree, checkpointPath, entries); err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
+// spliceCheckpointSubtree builds a tree from checkpoint-local entries and installs it
+// at the correct shard location in the root tree using O(depth) tree surgery.
+// basePath is like "a3/b2c4d5e6f7/" (with trailing slash).
+// Returns the new root tree hash.
+func (s *GitStore) spliceCheckpointSubtree(rootTreeHash plumbing.Hash, checkpointID id.CheckpointID, basePath string, entries map[string]object.TreeEntry) (plumbing.Hash, error) {
+	// Convert entries to relative paths (strip basePath prefix)
+	relEntries := make(map[string]object.TreeEntry, len(entries))
+	for path, entry := range entries {
+		relPath := strings.TrimPrefix(path, basePath)
+		if relPath == path {
+			continue // Entry doesn't have the expected prefix
+		}
+		relEntries[relPath] = entry
+	}
+
+	// Build the checkpoint subtree from relative entries
+	checkpointTreeHash, err := BuildTreeFromEntries(s.repo, relEntries)
+	if err != nil {
+		return plumbing.ZeroHash, fmt.Errorf("failed to build checkpoint subtree: %w", err)
+	}
+
+	// Splice into root tree at the shard path using tree surgery
+	// Path: ["a3"] with entry "b2c4d5e6f7" pointing to the checkpoint tree
+	shardPrefix := string(checkpointID[:2])
+	shardSuffix := string(checkpointID[2:])
+	return UpdateSubtree(s.repo, rootTreeHash, []string{shardPrefix}, []object.TreeEntry{
+		{Name: shardSuffix, Mode: filemode.Dir, Hash: checkpointTreeHash},
+	}, UpdateSubtreeOptions{MergeMode: MergeKeepExisting})
 }
 
 // writeTaskCheckpointEntries writes task-specific checkpoint entries and returns the task metadata path.
@@ -995,14 +1035,21 @@ func (s *GitStore) UpdateSummary(ctx context.Context, checkpointID id.Checkpoint
 		return fmt.Errorf("failed to ensure sessions branch: %w", err)
 	}
 
-	// Get current branch tip and flatten tree
-	ref, entries, err := s.getSessionsBranchEntries()
+	// Get branch ref and root tree hash (O(1), no flatten)
+	parentHash, rootTreeHash, err := s.getSessionsBranchRef()
+	if err != nil {
+		return err
+	}
+
+	// Flatten only the checkpoint subtree
+	basePath := checkpointID.Path() + "/"
+	checkpointPath := checkpointID.Path()
+	entries, err := s.flattenCheckpointEntries(rootTreeHash, checkpointPath)
 	if err != nil {
 		return err
 	}
 
 	// Read root CheckpointSummary to find the latest session
-	basePath := checkpointID.Path() + "/"
 	rootMetadataPath := basePath + paths.MetadataFileName
 	entry, exists := entries[rootMetadataPath]
 	if !exists {
@@ -1046,15 +1093,15 @@ func (s *GitStore) UpdateSummary(ctx context.Context, checkpointID id.Checkpoint
 		Hash: metadataHash,
 	}
 
-	// Build and commit
-	newTreeHash, err := BuildTreeFromEntries(s.repo, entries)
+	// Build checkpoint subtree and splice into root (O(depth) tree surgery)
+	newTreeHash, err := s.spliceCheckpointSubtree(rootTreeHash, checkpointID, basePath, entries)
 	if err != nil {
 		return err
 	}
 
 	authorName, authorEmail := GetGitAuthorFromRepo(s.repo)
 	commitMsg := fmt.Sprintf("Update summary for checkpoint %s (session: %s)", checkpointID, existingMetadata.SessionID)
-	newCommitHash, err := s.createCommit(newTreeHash, ref.Hash(), commitMsg, authorName, authorEmail)
+	newCommitHash, err := s.createCommit(newTreeHash, parentHash, commitMsg, authorName, authorEmail)
 	if err != nil {
 		return err
 	}
@@ -1086,14 +1133,21 @@ func (s *GitStore) UpdateCommitted(ctx context.Context, opts UpdateCommittedOpti
 		return fmt.Errorf("failed to ensure sessions branch: %w", err)
 	}
 
-	// Get current branch tip and flatten tree
-	ref, entries, err := s.getSessionsBranchEntries()
+	// Get branch ref and root tree hash (O(1), no flatten)
+	parentHash, rootTreeHash, err := s.getSessionsBranchRef()
+	if err != nil {
+		return err
+	}
+
+	// Flatten only the checkpoint subtree
+	basePath := opts.CheckpointID.Path() + "/"
+	checkpointPath := opts.CheckpointID.Path()
+	entries, err := s.flattenCheckpointEntries(rootTreeHash, checkpointPath)
 	if err != nil {
 		return err
 	}
 
 	// Read root CheckpointSummary to find the session slot
-	basePath := opts.CheckpointID.Path() + "/"
 	rootMetadataPath := basePath + paths.MetadataFileName
 	entry, exists := entries[rootMetadataPath]
 	if !exists {
@@ -1171,15 +1225,15 @@ func (s *GitStore) UpdateCommitted(ctx context.Context, opts UpdateCommittedOpti
 		}
 	}
 
-	// Build and commit
-	newTreeHash, err := BuildTreeFromEntries(s.repo, entries)
+	// Build checkpoint subtree and splice into root (O(depth) tree surgery)
+	newTreeHash, err := s.spliceCheckpointSubtree(rootTreeHash, opts.CheckpointID, basePath, entries)
 	if err != nil {
 		return err
 	}
 
 	authorName, authorEmail := GetGitAuthorFromRepo(s.repo)
 	commitMsg := fmt.Sprintf("Finalize transcript for Checkpoint: %s", opts.CheckpointID)
-	newCommitHash, err := s.createCommit(newTreeHash, ref.Hash(), commitMsg, authorName, authorEmail)
+	newCommitHash, err := s.createCommit(newTreeHash, parentHash, commitMsg, authorName, authorEmail)
 	if err != nil {
 		return err
 	}

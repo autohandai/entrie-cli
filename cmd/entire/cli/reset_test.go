@@ -232,30 +232,6 @@ func TestResetCmd_NotGitRepo(t *testing.T) {
 	}
 }
 
-func TestResetCmd_AutoCommitStrategy(t *testing.T) {
-	setupResetTestRepo(t)
-
-	// Write auto-commit strategy settings
-	writeSettings(t, `{"strategy": "auto-commit", "enabled": true}`)
-
-	// Run reset
-	cmd := newResetCmd()
-	var stdout, stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
-
-	err := cmd.Execute()
-	if err == nil {
-		t.Fatal("reset command should return error for auto-commit strategy")
-	}
-
-	// Verify helpful error message
-	output := stderr.String()
-	if !strings.Contains(output, "strategy auto-commit does not support reset") {
-		t.Errorf("Expected message about auto-commit strategy, got: %s", output)
-	}
-}
-
 func TestResetCmd_MultipleSessions(t *testing.T) {
 	repo, commitHash := setupResetTestRepo(t)
 
