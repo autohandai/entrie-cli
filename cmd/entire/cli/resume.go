@@ -131,7 +131,7 @@ func resumeFromCurrentBranch(ctx context.Context, branchName string, force bool)
 	if err != nil {
 		return err
 	}
-	if result.checkpointID.IsEmpty() {
+	if len(result.checkpointIDs) == 0 {
 		fmt.Fprintf(os.Stderr, "No Entire checkpoint found on branch '%s'\n", branchName)
 		return nil
 	}
@@ -153,7 +153,7 @@ func resumeFromCurrentBranch(ctx context.Context, branchName string, force bool)
 		}
 	}
 
-	checkpointID := result.checkpointID
+	checkpointID := result.checkpointIDs[0]
 
 	// Get metadata branch tree for lookups
 	metadataTree, err := strategy.GetMetadataBranchTree(repo)
@@ -174,7 +174,7 @@ func resumeFromCurrentBranch(ctx context.Context, branchName string, force bool)
 
 // branchCheckpointResult contains the result of searching for a checkpoint on a branch.
 type branchCheckpointResult struct {
-	checkpointID      id.CheckpointID
+	checkpointIDs     []id.CheckpointID
 	commitHash        string
 	commitMessage     string
 	newerCommitsExist bool // true if there are branch-only commits (not merge commits) without checkpoints
@@ -199,8 +199,8 @@ func findBranchCheckpoint(repo *git.Repository, branchName string) (*branchCheck
 	}
 
 	// First, check if HEAD itself has a checkpoint (most common case)
-	if cpID, found := trailers.ParseCheckpoint(headCommit.Message); found {
-		result.checkpointID = cpID
+	if cpIDs := trailers.ParseAllCheckpoints(headCommit.Message); len(cpIDs) > 0 {
+		result.checkpointIDs = cpIDs
 		result.commitHash = head.Hash().String()
 		result.commitMessage = headCommit.Message
 		result.newerCommitsExist = false
@@ -268,8 +268,8 @@ func findCheckpointInHistory(start *object.Commit, stopAt *plumbing.Hash) *branc
 		}
 
 		// Check for checkpoint trailer
-		if cpID, found := trailers.ParseCheckpoint(current.Message); found {
-			result.checkpointID = cpID
+		if cpIDs := trailers.ParseAllCheckpoints(current.Message); len(cpIDs) > 0 {
+			result.checkpointIDs = cpIDs
 			result.commitHash = current.Hash.String()
 			result.commitMessage = current.Message
 			// Only warn about branch work commits, not merge commits
