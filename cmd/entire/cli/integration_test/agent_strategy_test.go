@@ -243,48 +243,41 @@ func TestSetupAgentFlag(t *testing.T) {
 func TestFactoryAIDroidAgentStrategyComposition(t *testing.T) {
 	t.Parallel()
 
-	for _, strat := range AllStrategies() {
-		strat := strat // capture for parallel
-		t.Run(strat, func(t *testing.T) {
-			t.Parallel()
+	// Set up repo
+	env := NewTestEnv(t)
+	env.InitRepo()
+	env.InitEntire()
 
-			// Set up repo with the specific strategy
-			env := NewTestEnv(t)
-			env.InitRepo()
-			env.InitEntire(strat)
+	// Create initial commit
+	env.WriteFile(".gitignore", ".entire/\n")
+	env.WriteFile("README.md", "# Test Repository")
+	env.GitAdd(".gitignore")
+	env.GitAdd("README.md")
+	env.GitCommit("Initial commit")
 
-			// Create initial commit
-			env.WriteFile(".gitignore", ".entire/\n")
-			env.WriteFile("README.md", "# Test Repository")
-			env.GitAdd(".gitignore")
-			env.GitAdd("README.md")
-			env.GitCommit("Initial commit")
+	// Create feature branch
+	env.GitCheckoutNewBranch("feature/droid-test")
 
-			// Create feature branch
-			env.GitCheckoutNewBranch("feature/droid-test")
+	// Create a Droid session with Droid-envelope transcript
+	session := env.NewFactoryDroidSession()
+	env.WriteFile("feature.go", "package main\n// new feature")
+	session.CreateDroidTranscript("Add a feature", []FileChange{
+		{Path: "feature.go", Content: "package main\n// new feature"},
+	})
 
-			// Create a Droid session with Droid-envelope transcript
-			session := env.NewFactoryDroidSession()
-			env.WriteFile("feature.go", "package main\n// new feature")
-			session.CreateDroidTranscript("Add a feature", []FileChange{
-				{Path: "feature.go", Content: "package main\n// new feature"},
-			})
+	// Simulate session flow: UserPromptSubmit → Stop
+	if err := env.SimulateFactoryDroidUserPromptSubmit(session.ID); err != nil {
+		t.Fatalf("SimulateFactoryDroidUserPromptSubmit error = %v", err)
+	}
 
-			// Simulate session flow: UserPromptSubmit → Stop
-			if err := env.SimulateFactoryDroidUserPromptSubmit(session.ID); err != nil {
-				t.Fatalf("SimulateFactoryDroidUserPromptSubmit error = %v", err)
-			}
+	if err := env.SimulateFactoryDroidStop(session.ID, session.TranscriptPath); err != nil {
+		t.Fatalf("SimulateFactoryDroidStop error = %v", err)
+	}
 
-			if err := env.SimulateFactoryDroidStop(session.ID, session.TranscriptPath); err != nil {
-				t.Fatalf("SimulateFactoryDroidStop error = %v", err)
-			}
-
-			// Verify checkpoint was created
-			points := env.GetRewindPoints()
-			if len(points) == 0 {
-				t.Fatal("expected at least 1 rewind point after Stop hook")
-			}
-		})
+	// Verify checkpoint was created
+	points := env.GetRewindPoints()
+	if len(points) == 0 {
+		t.Fatal("expected at least 1 rewind point after Stop hook")
 	}
 }
 
@@ -293,47 +286,40 @@ func TestFactoryAIDroidAgentStrategyComposition(t *testing.T) {
 func TestFactoryAIDroidSessionIDTransformation(t *testing.T) {
 	t.Parallel()
 
-	for _, strat := range AllStrategies() {
-		strat := strat
-		t.Run(strat, func(t *testing.T) {
-			t.Parallel()
+	env := NewTestEnv(t)
+	env.InitRepo()
+	env.InitEntire()
 
-			env := NewTestEnv(t)
-			env.InitRepo()
-			env.InitEntire(strat)
+	env.WriteFile(".gitignore", ".entire/\n")
+	env.WriteFile("README.md", "# Test")
+	env.GitAdd(".gitignore")
+	env.GitAdd("README.md")
+	env.GitCommit("Initial commit")
+	env.GitCheckoutNewBranch("feature/droid-rewind")
 
-			env.WriteFile(".gitignore", ".entire/\n")
-			env.WriteFile("README.md", "# Test")
-			env.GitAdd(".gitignore")
-			env.GitAdd("README.md")
-			env.GitCommit("Initial commit")
-			env.GitCheckoutNewBranch("feature/droid-rewind")
+	// Create session
+	session := env.NewFactoryDroidSession()
+	env.WriteFile("test.go", "package main")
+	session.CreateDroidTranscript("Test", []FileChange{
+		{Path: "test.go", Content: "package main"},
+	})
 
-			// Create session
-			session := env.NewFactoryDroidSession()
-			env.WriteFile("test.go", "package main")
-			session.CreateDroidTranscript("Test", []FileChange{
-				{Path: "test.go", Content: "package main"},
-			})
+	// Simulate hooks
+	if err := env.SimulateFactoryDroidUserPromptSubmit(session.ID); err != nil {
+		t.Fatalf("UserPromptSubmit error = %v", err)
+	}
+	if err := env.SimulateFactoryDroidStop(session.ID, session.TranscriptPath); err != nil {
+		t.Fatalf("Stop error = %v", err)
+	}
 
-			// Simulate hooks
-			if err := env.SimulateFactoryDroidUserPromptSubmit(session.ID); err != nil {
-				t.Fatalf("UserPromptSubmit error = %v", err)
-			}
-			if err := env.SimulateFactoryDroidStop(session.ID, session.TranscriptPath); err != nil {
-				t.Fatalf("Stop error = %v", err)
-			}
+	// Get rewind points and verify we can rewind
+	points := env.GetRewindPoints()
+	if len(points) == 0 {
+		t.Skip("no rewind points created")
+	}
 
-			// Get rewind points and verify we can rewind
-			points := env.GetRewindPoints()
-			if len(points) == 0 {
-				t.Skip("no rewind points created")
-			}
-
-			// Rewind should work
-			if err := env.Rewind(points[0].ID); err != nil {
-				t.Errorf("Rewind() error = %v", err)
-			}
-		})
+	// Rewind should work
+	if err := env.Rewind(points[0].ID); err != nil {
+		t.Errorf("Rewind() error = %v", err)
 	}
 }

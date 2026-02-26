@@ -867,7 +867,8 @@ func TestFactoryAIDroidAgentDetection(t *testing.T) {
 			t.Fatalf("Get(factoryai-droid) error = %v", err)
 		}
 
-		present, err := ag.DetectPresence()
+		ctx := context.Background()
+		present, err := ag.DetectPresence(ctx)
 		if err != nil {
 			t.Fatalf("DetectPresence() error = %v", err)
 		}
@@ -904,7 +905,8 @@ func TestFactoryAIDroidHookInstallation(t *testing.T) {
 			t.Fatal("factoryai-droid agent does not implement HookSupport")
 		}
 
-		count, err := hookAgent.InstallHooks(false, false)
+		ctx := context.Background()
+		count, err := hookAgent.InstallHooks(ctx, false, false)
 		if err != nil {
 			t.Fatalf("InstallHooks() error = %v", err)
 		}
@@ -916,7 +918,7 @@ func TestFactoryAIDroidHookInstallation(t *testing.T) {
 		}
 
 		// Verify hooks are installed
-		if !hookAgent.AreHooksInstalled() {
+		if !hookAgent.AreHooksInstalled(ctx) {
 			t.Error("AreHooksInstalled() = false after InstallHooks()")
 		}
 
@@ -976,14 +978,15 @@ func TestFactoryAIDroidHookInstallation(t *testing.T) {
 		ag, _ := agent.Get("factoryai-droid")
 		hookAgent := ag.(agent.HookSupport)
 
+		ctx := context.Background()
 		// First install
-		_, err := hookAgent.InstallHooks(false, false)
+		_, err := hookAgent.InstallHooks(ctx, false, false)
 		if err != nil {
 			t.Fatalf("first InstallHooks() error = %v", err)
 		}
 
 		// Second install should be idempotent
-		count, err := hookAgent.InstallHooks(false, false)
+		count, err := hookAgent.InstallHooks(ctx, false, false)
 		if err != nil {
 			t.Fatalf("second InstallHooks() error = %v", err)
 		}
@@ -1006,7 +1009,8 @@ func TestFactoryAIDroidHookInstallation(t *testing.T) {
 		ag, _ := agent.Get("factoryai-droid")
 		hookAgent := ag.(agent.HookSupport)
 
-		_, err := hookAgent.InstallHooks(true, false) // localDev = true
+		ctx := context.Background()
+		_, err := hookAgent.InstallHooks(ctx, true, false) // localDev = true
 		if err != nil {
 			t.Fatalf("InstallHooks(localDev=true) error = %v", err)
 		}
@@ -1041,7 +1045,8 @@ func TestFactoryAIDroidHookInstallation(t *testing.T) {
 		ag, _ := agent.Get("factoryai-droid")
 		hookAgent := ag.(agent.HookSupport)
 
-		_, err := hookAgent.InstallHooks(false, false) // localDev = false
+		ctx := context.Background()
+		_, err := hookAgent.InstallHooks(ctx, false, false) // localDev = false
 		if err != nil {
 			t.Fatalf("InstallHooks(localDev=false) error = %v", err)
 		}
@@ -1073,14 +1078,15 @@ func TestFactoryAIDroidHookInstallation(t *testing.T) {
 		ag, _ := agent.Get("factoryai-droid")
 		hookAgent := ag.(agent.HookSupport)
 
+		ctx := context.Background()
 		// First install
-		_, err := hookAgent.InstallHooks(false, false)
+		_, err := hookAgent.InstallHooks(ctx, false, false)
 		if err != nil {
 			t.Fatalf("first InstallHooks() error = %v", err)
 		}
 
 		// Force reinstall should return count > 0
-		count, err := hookAgent.InstallHooks(false, true) // force = true
+		count, err := hookAgent.InstallHooks(ctx, false, true) // force = true
 		if err != nil {
 			t.Fatalf("force InstallHooks() error = %v", err)
 		}
@@ -1156,7 +1162,8 @@ func TestFactoryAIDroidSessionMethods(t *testing.T) {
 		}
 
 		session.SessionRef = restoredPath
-		if err := ag.WriteSession(session); err != nil {
+		ctx := context.Background()
+		if err := ag.WriteSession(ctx, session); err != nil {
 			t.Fatalf("WriteSession() error = %v", err)
 		}
 
