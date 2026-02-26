@@ -777,7 +777,8 @@ func generateContextFromPrompts(prompts []string) []byte {
 	for i, prompt := range prompts {
 		// Truncate very long prompts for readability.
 		// Use rune-based truncation to avoid splitting multi-byte UTF-8 characters (e.g. CJK).
-		displayPrompt := stringutil.TruncateRunes(prompt, 500, "...")
+		const maxDisplayPromptRunes = 500
+		displayPrompt := stringutil.TruncateRunes(prompt, maxDisplayPromptRunes, "...")
 		fmt.Fprintf(&buf, "### Prompt %d\n\n", i+1)
 		buf.WriteString(displayPrompt)
 		buf.WriteString("\n\n")
