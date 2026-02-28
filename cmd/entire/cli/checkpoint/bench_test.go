@@ -1,4 +1,4 @@
-package checkpoint
+package checkpoint_test
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/entireio/cli/cmd/entire/cli/benchutil"
+	"github.com/entireio/cli/cmd/entire/cli/checkpoint"
 	"github.com/entireio/cli/cmd/entire/cli/checkpoint/id"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
 
@@ -62,7 +63,7 @@ func benchWriteTemporaryFirstCheckpoint(fileCount, fileSizeLines int) func(*test
 			// measure the first-checkpoint path (which runs collectChangedFiles).
 			// We use a unique session ID per iteration to get a fresh shadow branch.
 			sid := fmt.Sprintf("bench-first-%d", i)
-			_, writeErr := repo.Store.WriteTemporary(ctx, WriteTemporaryOptions{
+			_, writeErr := repo.Store.WriteTemporary(ctx, checkpoint.WriteTemporaryOptions{
 				SessionID:         sid,
 				BaseCommit:        repo.HeadHash,
 				WorktreeID:        repo.WorktreeID,
@@ -123,7 +124,7 @@ func benchWriteTemporaryIncremental(modified, newFiles, deleted int) func(*testi
 		ctx := context.Background()
 		b.ResetTimer()
 		for range b.N {
-			_, writeErr := repo.Store.WriteTemporary(ctx, WriteTemporaryOptions{
+			_, writeErr := repo.Store.WriteTemporary(ctx, checkpoint.WriteTemporaryOptions{
 				SessionID:         sessionID,
 				BaseCommit:        repo.HeadHash,
 				WorktreeID:        repo.WorktreeID,
@@ -172,7 +173,7 @@ func benchWriteTemporaryIncrementalLargeFiles(fileCount, linesPerFile int) func(
 		ctx := context.Background()
 		b.ResetTimer()
 		for range b.N {
-			_, writeErr := repo.Store.WriteTemporary(ctx, WriteTemporaryOptions{
+			_, writeErr := repo.Store.WriteTemporary(ctx, checkpoint.WriteTemporaryOptions{
 				SessionID:         sessionID,
 				BaseCommit:        repo.HeadHash,
 				WorktreeID:        repo.WorktreeID,
@@ -208,7 +209,7 @@ func benchWriteTemporaryDedup() func(*testing.B) {
 		ctx := context.Background()
 		b.ResetTimer()
 		for range b.N {
-			result, writeErr := repo.Store.WriteTemporary(ctx, WriteTemporaryOptions{
+			result, writeErr := repo.Store.WriteTemporary(ctx, checkpoint.WriteTemporaryOptions{
 				SessionID:         sessionID,
 				BaseCommit:        repo.HeadHash,
 				WorktreeID:        repo.WorktreeID,
@@ -255,7 +256,7 @@ func benchWriteTemporaryWithHistory(priorCheckpoints int) func(*testing.B) {
 		ctx := context.Background()
 		b.ResetTimer()
 		for range b.N {
-			_, writeErr := repo.Store.WriteTemporary(ctx, WriteTemporaryOptions{
+			_, writeErr := repo.Store.WriteTemporary(ctx, checkpoint.WriteTemporaryOptions{
 				SessionID:         sessionID,
 				BaseCommit:        repo.HeadHash,
 				WorktreeID:        repo.WorktreeID,
@@ -322,7 +323,7 @@ func benchWriteCommitted(messageCount, avgMsgBytes, filesTouched, priorCheckpoin
 			if err != nil {
 				b.Fatalf("generate ID: %v", err)
 			}
-			err = repo.Store.WriteCommitted(ctx, WriteCommittedOptions{
+			err = repo.Store.WriteCommitted(ctx, checkpoint.WriteCommittedOptions{
 				CheckpointID:     cpID,
 				SessionID:        fmt.Sprintf("bench-session-%d", i),
 				Strategy:         "manual-commit",
@@ -373,7 +374,7 @@ func benchFlattenTree(fileCount, fileSizeLines int) func(*testing.B) {
 		b.ResetTimer()
 		for range b.N {
 			entries := make(map[string]object.TreeEntry, fileCount)
-			if err := FlattenTree(repo.Repo, tree, "", entries); err != nil {
+			if err := checkpoint.FlattenTree(repo.Repo, tree, "", entries); err != nil {
 				b.Fatalf("FlattenTree: %v", err)
 			}
 		}
@@ -406,7 +407,7 @@ func benchBuildTree(entryCount int) func(*testing.B) {
 			b.Fatalf("tree: %v", err)
 		}
 		entries := make(map[string]object.TreeEntry, entryCount)
-		if err := FlattenTree(repo.Repo, tree, "", entries); err != nil {
+		if err := checkpoint.FlattenTree(repo.Repo, tree, "", entries); err != nil {
 			b.Fatalf("FlattenTree: %v", err)
 		}
 
@@ -418,7 +419,7 @@ func benchBuildTree(entryCount int) func(*testing.B) {
 
 		b.ResetTimer()
 		for range b.N {
-			_, buildErr := BuildTreeFromEntries(freshRepo, entries)
+			_, buildErr := checkpoint.BuildTreeFromEntries(freshRepo, entries)
 			if buildErr != nil {
 				b.Fatalf("BuildTreeFromEntries: %v", buildErr)
 			}

@@ -1,8 +1,10 @@
-package checkpoint
+package checkpoint_test
 
 import (
 	"fmt"
 	"testing"
+
+	"github.com/entireio/cli/cmd/entire/cli/checkpoint"
 
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -25,7 +27,7 @@ func benchInitBareRepo(b *testing.B) *gogit.Repository {
 // benchCreateBlob stores a blob in the repo.
 func benchCreateBlob(b *testing.B, repo *gogit.Repository, content string) plumbing.Hash {
 	b.Helper()
-	hash, err := CreateBlobFromContent(repo, []byte(content))
+	hash, err := checkpoint.CreateBlobFromContent(repo, []byte(content))
 	if err != nil {
 		b.Fatalf("create blob: %v", err)
 	}
@@ -58,7 +60,7 @@ func buildShardedMetadataTree(b *testing.B, repo *gogit.Repository, checkpointCo
 			{"0/prompt.txt", fmt.Sprintf("Implement feature %d", i)},
 			{"0/content_hash.txt", fmt.Sprintf("sha256:%064x", i)},
 		} {
-			blob, err := CreateBlobFromContent(repo, []byte(file.content))
+			blob, err := checkpoint.CreateBlobFromContent(repo, []byte(file.content))
 			if err != nil {
 				b.Fatalf("create blob: %v", err)
 			}
@@ -71,7 +73,7 @@ func buildShardedMetadataTree(b *testing.B, repo *gogit.Repository, checkpointCo
 		}
 	}
 
-	hash, err := BuildTreeFromEntries(repo, entries)
+	hash, err := checkpoint.BuildTreeFromEntries(repo, entries)
 	if err != nil {
 		b.Fatalf("build tree: %v", err)
 	}
@@ -96,7 +98,7 @@ func buildFlatFileTree(b *testing.B, repo *gogit.Repository, fileCount int) plum
 		}
 	}
 
-	hash, err := BuildTreeFromEntries(repo, entries)
+	hash, err := checkpoint.BuildTreeFromEntries(repo, entries)
 	if err != nil {
 		b.Fatalf("build tree: %v", err)
 	}
@@ -136,7 +138,7 @@ func benchUpdateSubtreeTreeSurgery(priorCheckpoints int) func(*testing.B) {
 				Hash: newBlobs[i],
 			}
 		}
-		cpTreeHash, err := BuildTreeFromEntries(repo, cpEntries)
+		cpTreeHash, err := checkpoint.BuildTreeFromEntries(repo, cpEntries)
 		if err != nil {
 			b.Fatalf("build checkpoint tree: %v", err)
 		}
@@ -146,9 +148,9 @@ func benchUpdateSubtreeTreeSurgery(priorCheckpoints int) func(*testing.B) {
 
 		b.ResetTimer()
 		for range b.N {
-			_, err := UpdateSubtree(repo, rootTree, []string{shardPrefix}, []object.TreeEntry{
+			_, err := checkpoint.UpdateSubtree(repo, rootTree, []string{shardPrefix}, []object.TreeEntry{
 				{Name: shardSuffix, Mode: filemode.Dir, Hash: cpTreeHash},
-			}, UpdateSubtreeOptions{MergeMode: MergeKeepExisting})
+			}, checkpoint.UpdateSubtreeOptions{MergeMode: checkpoint.MergeKeepExisting})
 			if err != nil {
 				b.Fatalf("UpdateSubtree: %v", err)
 			}
@@ -187,7 +189,7 @@ func benchUpdateSubtreeFlattenRebuild(priorCheckpoints int) func(*testing.B) {
 				b.Fatalf("read tree: %v", err)
 			}
 			entries := make(map[string]object.TreeEntry)
-			if err := FlattenTree(repo, tree, "", entries); err != nil {
+			if err := checkpoint.FlattenTree(repo, tree, "", entries); err != nil {
 				b.Fatalf("FlattenTree: %v", err)
 			}
 
@@ -201,7 +203,7 @@ func benchUpdateSubtreeFlattenRebuild(priorCheckpoints int) func(*testing.B) {
 			}
 
 			// Rebuild entire tree
-			_, err = BuildTreeFromEntries(repo, entries)
+			_, err = checkpoint.BuildTreeFromEntries(repo, entries)
 			if err != nil {
 				b.Fatalf("BuildTreeFromEntries: %v", err)
 			}
@@ -234,14 +236,14 @@ func benchApplyTreeChangesTreeSurgery(fileCount, changeCount int) func(*testing.
 		rootTree := buildFlatFileTree(b, repo, fileCount)
 
 		// Prepare changes: modify files spread across directories
-		changes := make([]TreeChange, 0, changeCount)
+		changes := make([]checkpoint.TreeChange, 0, changeCount)
 		dirs := []string{"src", "pkg", "internal", "cmd", "api"}
 		for i := range changeCount {
 			dir := dirs[i%len(dirs)]
 			fileIdx := i % fileCount
 			path := fmt.Sprintf("%s/file_%04d.go", dir, fileIdx)
 			newBlob := benchCreateBlob(b, repo, fmt.Sprintf("modified content %d\n", i))
-			changes = append(changes, TreeChange{
+			changes = append(changes, checkpoint.TreeChange{
 				Path: path,
 				Entry: &object.TreeEntry{
 					Name: fmt.Sprintf("file_%04d.go", fileIdx),
@@ -253,7 +255,7 @@ func benchApplyTreeChangesTreeSurgery(fileCount, changeCount int) func(*testing.
 
 		b.ResetTimer()
 		for range b.N {
-			_, err := ApplyTreeChanges(repo, rootTree, changes)
+			_, err := checkpoint.ApplyTreeChanges(repo, rootTree, changes)
 			if err != nil {
 				b.Fatalf("ApplyTreeChanges: %v", err)
 			}
@@ -291,7 +293,7 @@ func benchApplyTreeChangesFlattenRebuild(fileCount, changeCount int) func(*testi
 				b.Fatalf("read tree: %v", err)
 			}
 			entries := make(map[string]object.TreeEntry)
-			if err := FlattenTree(repo, tree, "", entries); err != nil {
+			if err := checkpoint.FlattenTree(repo, tree, "", entries); err != nil {
 				b.Fatalf("FlattenTree: %v", err)
 			}
 
@@ -305,7 +307,7 @@ func benchApplyTreeChangesFlattenRebuild(fileCount, changeCount int) func(*testi
 			}
 
 			// Rebuild
-			_, err = BuildTreeFromEntries(repo, entries)
+			_, err = checkpoint.BuildTreeFromEntries(repo, entries)
 			if err != nil {
 				b.Fatalf("BuildTreeFromEntries: %v", err)
 			}
