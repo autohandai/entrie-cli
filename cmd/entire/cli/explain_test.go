@@ -3626,11 +3626,6 @@ func TestGetBranchCheckpoints_ReadsPromptFromCommittedCheckpoint(t *testing.T) {
 		t.Fatalf("failed to create commit with checkpoint trailer: %v", err)
 	}
 
-	// Create .entire directory (needed for repo detection)
-	if err := os.MkdirAll(filepath.Join(tmpDir, ".entire"), 0o750); err != nil {
-		t.Fatalf("failed to create .entire dir: %v", err)
-	}
-
 	// Call getBranchCheckpoints and verify prompt is populated
 	points, err := getBranchCheckpoints(context.Background(), repo, 10)
 	if err != nil {
