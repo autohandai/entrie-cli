@@ -101,6 +101,7 @@ const (
 	AgentNameGemini         types.AgentName = "gemini"
 	AgentNameOpenCode       types.AgentName = "opencode"
 	AgentNameFactoryAIDroid types.AgentName = "factoryai-droid"
+	AgentNameAutohandCode   types.AgentName = "autohand-code"
 )
 
 // Agent type constants (type identifiers stored in metadata/trailers)
@@ -110,6 +111,7 @@ const (
 	AgentTypeGemini         types.AgentType = "Gemini CLI"
 	AgentTypeOpenCode       types.AgentType = "OpenCode"
 	AgentTypeFactoryAIDroid types.AgentType = "Factory AI Droid"
+	AgentTypeAutohandCode   types.AgentType = "Autohand Code"
 	AgentTypeUnknown        types.AgentType = "Agent" // Fallback for backwards compatibility
 )
 
