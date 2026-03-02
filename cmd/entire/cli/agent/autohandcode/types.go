@@ -9,8 +9,8 @@ type AutohandConfig struct {
 
 // AutohandHooksSettings contains the hooks configuration.
 type AutohandHooksSettings struct {
-	Enabled *bool              `json:"enabled,omitempty"`
-	Hooks   []AutohandHookDef  `json:"hooks,omitempty"`
+	Enabled *bool             `json:"enabled,omitempty"`
+	Hooks   []AutohandHookDef `json:"hooks,omitempty"`
 }
 
 // AutohandHookDef represents a single hook definition.
@@ -47,10 +47,10 @@ type hookInputBase struct {
 
 // hookInputPrompt extends hookInputBase for pre-prompt events.
 type hookInputPrompt struct {
-	SessionID     string   `json:"session_id"`
-	CWD           string   `json:"cwd"`
-	HookEventName string   `json:"hook_event_name"`
-	Instruction   string   `json:"instruction"`
+	SessionID      string   `json:"session_id"`
+	CWD            string   `json:"cwd"`
+	HookEventName  string   `json:"hook_event_name"`
+	Instruction    string   `json:"instruction"`
 	MentionedFiles []string `json:"mentioned_files"`
 }
 
@@ -80,15 +80,15 @@ type hookInputTool struct {
 
 // hookInputSubagent extends hookInputBase for subagent-stop events.
 type hookInputSubagent struct {
-	SessionID       string `json:"session_id"`
-	CWD             string `json:"cwd"`
-	HookEventName   string `json:"hook_event_name"`
-	SubagentID      string `json:"subagent_id"`
-	SubagentName    string `json:"subagent_name"`
-	SubagentType    string `json:"subagent_type"`
-	SubagentSuccess *bool  `json:"subagent_success"`
-	SubagentError   string `json:"subagent_error"`
-	SubagentDuration int   `json:"subagent_duration"`
+	SessionID        string `json:"session_id"`
+	CWD              string `json:"cwd"`
+	HookEventName    string `json:"hook_event_name"`
+	SubagentID       string `json:"subagent_id"`
+	SubagentName     string `json:"subagent_name"`
+	SubagentType     string `json:"subagent_type"`
+	SubagentSuccess  *bool  `json:"subagent_success"`
+	SubagentError    string `json:"subagent_error"`
+	SubagentDuration int    `json:"subagent_duration"`
 }
 
 // Tool names used in Autohand Code transcripts for file modification.
@@ -122,13 +122,13 @@ type autohandToolInput struct {
 
 // autohandMessage represents a single JSONL line in the Autohand transcript.
 type autohandMessage struct {
-	Role      string             `json:"role"`
-	Content   json.RawMessage    `json:"content"`
-	Timestamp string             `json:"timestamp"`
-	ToolCalls []autohandToolCall `json:"toolCalls,omitempty"`
-	Name      string             `json:"name,omitempty"`
-	ToolCallID string            `json:"tool_call_id,omitempty"`
-	Meta      map[string]any     `json:"_meta,omitempty"`
+	Role       string             `json:"role"`
+	Content    json.RawMessage    `json:"content"`
+	Timestamp  string             `json:"timestamp"`
+	ToolCalls  []autohandToolCall `json:"toolCalls,omitempty"`
+	Name       string             `json:"name,omitempty"`
+	ToolCallID string             `json:"tool_call_id,omitempty"`
+	Meta       map[string]any     `json:"_meta,omitempty"`
 }
 
 // autohandTokenMeta is extracted from _meta for token tracking.

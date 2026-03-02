@@ -92,9 +92,9 @@ func (a *AutohandCodeAgent) InstallHooks(ctx context.Context, localDev bool, for
 
 	// Add hooks if they don't exist
 	hookDefs := []struct {
-		event   string
-		verb    string
-		desc    string
+		event string
+		verb  string
+		desc  string
 	}{
 		{event: "session-start", verb: "session-start", desc: "Entire: session start checkpoint"},
 		{event: "pre-prompt", verb: "pre-prompt", desc: "Entire: capture user prompt"},
