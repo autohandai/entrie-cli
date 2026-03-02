@@ -3,6 +3,7 @@ package cli
 import (
 	"github.com/entireio/cli/cmd/entire/cli/agent"
 	// Import agents to ensure they are registered before we iterate
+	_ "github.com/entireio/cli/cmd/entire/cli/agent/autohandcode"
 	_ "github.com/entireio/cli/cmd/entire/cli/agent/claudecode"
 	_ "github.com/entireio/cli/cmd/entire/cli/agent/cursor"
 	_ "github.com/entireio/cli/cmd/entire/cli/agent/factoryaidroid"
