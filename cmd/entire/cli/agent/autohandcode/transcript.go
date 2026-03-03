@@ -291,8 +291,8 @@ func ExtractAllModifiedFilesFromBytes(data []byte, startLine int, subagentsDir s
 	return files, nil
 }
 
-// ExtractSpawnedAgentIDs extracts agent IDs from subagent-stop data in the transcript.
-// Returns a map of agentID -> toolUseID for all spawned agents.
+// ExtractSpawnedAgentIDs scans assistant messages for Task/task tool calls and
+// returns a map of spawned agent IDs, keyed and valued by the tool call ID.
 func ExtractSpawnedAgentIDs(transcriptLines []TranscriptLine) map[string]string {
 	agentIDs := make(map[string]string)
 
