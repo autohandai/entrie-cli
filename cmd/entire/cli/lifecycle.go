@@ -145,14 +145,17 @@ func handleLifecycleTurnStart(ctx context.Context, ag agent.Agent, event *agent.
 		if sessionDirAbs, absErr := paths.AbsPath(ctx, sessionDir); absErr == nil {
 			if mkErr := os.MkdirAll(sessionDirAbs, 0o750); mkErr == nil {
 				promptPath := filepath.Join(sessionDirAbs, paths.PromptFileName)
-				existing, _ := os.ReadFile(promptPath) //nolint:gosec // session metadata path
+				existing, readErr := os.ReadFile(promptPath) //nolint:gosec // session metadata path
 				var content string
-				if len(existing) > 0 {
+				if readErr == nil && len(existing) > 0 {
 					content = string(existing) + "\n\n---\n\n" + event.Prompt
 				} else {
 					content = event.Prompt
 				}
-				_ = os.WriteFile(promptPath, []byte(content), 0o600)
+				if writeErr := os.WriteFile(promptPath, []byte(content), 0o600); writeErr != nil {
+					logging.Warn(logCtx, "failed to write prompt.txt",
+						slog.String("error", writeErr.Error()))
+				}
 			}
 		}
 	}

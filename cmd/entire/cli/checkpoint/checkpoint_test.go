@@ -1376,7 +1376,6 @@ func TestWriteCommitted_SessionWithNoPrompts(t *testing.T) {
 	if content.Prompts != "" {
 		t.Errorf("Prompts should be empty, got %q", content.Prompts)
 	}
-
 }
 
 // TestWriteCommitted_SessionWithSummary verifies that a non-nil Summary

@@ -742,7 +742,7 @@ func clearFilesystemPrompt(ctx context.Context, sessionID string) {
 		return
 	}
 	promptPath := filepath.Join(sessionDirAbs, paths.PromptFileName)
-	_ = os.Remove(promptPath) //nolint:errcheck // best-effort cleanup
+	_ = os.Remove(promptPath)
 }
 
 // CondenseSessionByID force-condenses a session by its ID and cleans up.

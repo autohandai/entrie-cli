@@ -206,16 +206,6 @@ func TestCalculateTokenUsage_CursorWithOffset(t *testing.T) {
 	}
 }
 
-// droidSampleTranscript is a Droid JSONL transcript with user and assistant messages
-// in Droid's envelope format: {"type":"message","message":{"role":"...","content":[...]}}.
-var droidSampleTranscript = strings.Join([]string{
-	`{"type":"session_start","session":{"session_id":"s1"}}`,
-	`{"type":"message","id":"m1","message":{"role":"user","content":[{"type":"text","text":"create a file called hello.go"}]}}`,
-	`{"type":"message","id":"m2","message":{"role":"assistant","content":[{"type":"text","text":"I'll create that file."}]}}`,
-	`{"type":"message","id":"m3","message":{"role":"user","content":[{"type":"text","text":"<ide_opened_file>some content</ide_opened_file>now add a main function"}]}}`,
-	`{"type":"message","id":"m4","message":{"role":"assistant","content":[{"type":"text","text":"Added the main function."}]}}`,
-}, "\n") + "\n"
-
 // droidMessage builds a Droid JSONL "message" line with the given id, role, and optional usage.
 func droidMessage(t *testing.T, id, role string, usage map[string]int) string {
 	t.Helper()
