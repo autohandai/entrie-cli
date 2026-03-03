@@ -14,14 +14,14 @@ const (
 	// logsOnlyScanLimit is the maximum number of commits to scan for logs-only points.
 	logsOnlyScanLimit = 50
 
-	// maxFirstPromptRunes is the maximum rune length for FirstPrompt stored in session state.
-	maxFirstPromptRunes = 100
+	// maxLastPromptRunes is the maximum rune length for LastPrompt stored in session state.
+	maxLastPromptRunes = 100
 )
 
 // truncatePromptForStorage collapses whitespace and truncates a user prompt
-// for storage in FirstPrompt fields.
+// for storage in LastPrompt.
 func truncatePromptForStorage(prompt string) string {
-	return stringutil.TruncateRunes(stringutil.CollapseWhitespace(prompt), maxFirstPromptRunes, "...")
+	return stringutil.TruncateRunes(stringutil.CollapseWhitespace(prompt), maxLastPromptRunes, "...")
 }
 
 // SessionState is an alias for session.State.

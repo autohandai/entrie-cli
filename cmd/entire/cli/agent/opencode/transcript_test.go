@@ -491,39 +491,6 @@ func TestExtractPrompts(t *testing.T) {
 	}
 }
 
-func TestExtractSummary(t *testing.T) {
-	t.Parallel()
-	ag := &OpenCodeAgent{}
-	path := writeTestTranscript(t, testExportJSON)
-
-	summary, err := ag.ExtractSummary(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if summary != "Done fixing util.go." {
-		t.Errorf("expected summary 'Done fixing util.go.', got %q", summary)
-	}
-}
-
-func TestExtractSummary_EmptyTranscript(t *testing.T) {
-	t.Parallel()
-	ag := &OpenCodeAgent{}
-	emptySession := ExportSession{Info: SessionInfo{ID: "empty"}, Messages: []ExportMessage{}}
-	data, err := json.Marshal(emptySession)
-	if err != nil {
-		t.Fatalf("failed to marshal empty session: %v", err)
-	}
-	path := writeTestTranscript(t, string(data))
-
-	summary, err := ag.ExtractSummary(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if summary != "" {
-		t.Errorf("expected empty summary, got %q", summary)
-	}
-}
-
 func TestCalculateTokenUsage(t *testing.T) {
 	t.Parallel()
 	ag := &OpenCodeAgent{}

@@ -57,8 +57,8 @@ func TestShadow_FullWorkflow(t *testing.T) {
 	t.Log("Phase 2: Starting session and creating first checkpoint")
 
 	session := env.NewSession()
-	if err := env.SimulateUserPromptSubmit(session.ID); err != nil {
-		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
+	if err := env.SimulateUserPromptSubmitWithPrompt(session.ID, "Create authentication module"); err != nil {
+		t.Fatalf("SimulateUserPromptSubmitWithPrompt failed: %v", err)
 	}
 
 	// Verify session state file exists in .git/entire-sessions/
@@ -102,8 +102,8 @@ func TestShadow_FullWorkflow(t *testing.T) {
 	t.Log("Phase 3: Creating second checkpoint (continuing same session)")
 
 	// Continue the same session (not a new session) - this is the expected Claude behavior
-	if err := env.SimulateUserPromptSubmit(session.ID); err != nil {
-		t.Fatalf("SimulateUserPromptSubmit (checkpoint 2) failed: %v", err)
+	if err := env.SimulateUserPromptSubmitWithPrompt(session.ID, "Add password hashing"); err != nil {
+		t.Fatalf("SimulateUserPromptSubmitWithPrompt (checkpoint 2) failed: %v", err)
 	}
 
 	// Create hash.go and modify auth.go
@@ -188,8 +188,8 @@ func TestShadow_FullWorkflow(t *testing.T) {
 	t.Log("Phase 5: Creating checkpoint after rewind (continuing same session)")
 
 	// Continue the same session after rewind
-	if err := env.SimulateUserPromptSubmit(session.ID); err != nil {
-		t.Fatalf("SimulateUserPromptSubmit (after rewind) failed: %v", err)
+	if err := env.SimulateUserPromptSubmitWithPrompt(session.ID, "Use bcrypt for hashing"); err != nil {
+		t.Fatalf("SimulateUserPromptSubmitWithPrompt (after rewind) failed: %v", err)
 	}
 
 	// Reset transcript builder for next checkpoint
@@ -273,8 +273,8 @@ func TestShadow_FullWorkflow(t *testing.T) {
 
 	// Start new session
 	session4 := env.NewSession()
-	if err := env.SimulateUserPromptSubmit(session4.ID); err != nil {
-		t.Fatalf("SimulateUserPromptSubmit (session4) failed: %v", err)
+	if err := env.SimulateUserPromptSubmitWithPrompt(session4.ID, "Add session management"); err != nil {
+		t.Fatalf("SimulateUserPromptSubmitWithPrompt (session4) failed: %v", err)
 	}
 
 	// Create session management file
@@ -642,8 +642,8 @@ func TestShadow_TranscriptCondensation(t *testing.T) {
 
 	// Start session and create checkpoint with transcript
 	session := env.NewSession()
-	if err := env.SimulateUserPromptSubmit(session.ID); err != nil {
-		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
+	if err := env.SimulateUserPromptSubmitWithPrompt(session.ID, "Create main.go with hello world"); err != nil {
+		t.Fatalf("SimulateUserPromptSubmitWithPrompt failed: %v", err)
 	}
 
 	// Create a file change
@@ -727,8 +727,8 @@ func TestShadow_FullTranscriptContext(t *testing.T) {
 
 	// Start first session
 	session1 := env.NewSession()
-	if err := env.SimulateUserPromptSubmit(session1.ID); err != nil {
-		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
+	if err := env.SimulateUserPromptSubmitWithPrompt(session1.ID, "Create function A in a.go"); err != nil {
+		t.Fatalf("SimulateUserPromptSubmitWithPrompt failed: %v", err)
 	}
 
 	// First prompt: create file A
@@ -743,6 +743,9 @@ func TestShadow_FullTranscriptContext(t *testing.T) {
 	session1.TranscriptBuilder.AddAssistantMessage("Done creating function A!")
 
 	// Second prompt in same session: create file B
+	if err := env.SimulateUserPromptSubmitWithPrompt(session1.ID, "Now create function B in b.go"); err != nil {
+		t.Fatalf("SimulateUserPromptSubmitWithPrompt (second prompt) failed: %v", err)
+	}
 	fileBContent := "package main\n\nfunc B() {}\n"
 	env.WriteFile("b.go", fileBContent)
 
@@ -792,8 +795,8 @@ func TestShadow_FullTranscriptContext(t *testing.T) {
 
 	// Continue the session with a new prompt
 	// First, simulate another user prompt submit to track the new base
-	if err := env.SimulateUserPromptSubmit(session1.ID); err != nil {
-		t.Fatalf("SimulateUserPromptSubmit (continued) failed: %v", err)
+	if err := env.SimulateUserPromptSubmitWithPrompt(session1.ID, "Finally, create function C in c.go"); err != nil {
+		t.Fatalf("SimulateUserPromptSubmitWithPrompt (continued) failed: %v", err)
 	}
 
 	// Third prompt: create file C
@@ -877,8 +880,8 @@ func TestShadow_RewindAndCondensation(t *testing.T) {
 	t.Log("Phase 1: Create first checkpoint with prompt 1")
 
 	session := env.NewSession()
-	if err := env.SimulateUserPromptSubmit(session.ID); err != nil {
-		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
+	if err := env.SimulateUserPromptSubmitWithPrompt(session.ID, "Create function A in a.go"); err != nil {
+		t.Fatalf("SimulateUserPromptSubmitWithPrompt failed: %v", err)
 	}
 
 	// First prompt: create file A
@@ -1013,8 +1016,8 @@ func TestShadow_RewindPreservesUntrackedFilesFromSessionStart(t *testing.T) {
 	t.Log("Phase 1: Create first checkpoint")
 
 	session := env.NewSession()
-	if err := env.SimulateUserPromptSubmit(session.ID); err != nil {
-		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
+	if err := env.SimulateUserPromptSubmitWithPrompt(session.ID, "Create function A"); err != nil {
+		t.Fatalf("SimulateUserPromptSubmitWithPrompt failed: %v", err)
 	}
 
 	// First prompt: create file A
@@ -1136,8 +1139,8 @@ func TestShadow_IntermediateCommitsWithoutPrompts(t *testing.T) {
 	t.Log("Phase 1: Start session and create checkpoint")
 
 	session := env.NewSession()
-	if err := env.SimulateUserPromptSubmit(session.ID); err != nil {
-		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
+	if err := env.SimulateUserPromptSubmitWithPrompt(session.ID, "Create function A in a.go"); err != nil {
+		t.Fatalf("SimulateUserPromptSubmitWithPrompt failed: %v", err)
 	}
 
 	// First prompt: create file A
@@ -1190,8 +1193,8 @@ func TestShadow_IntermediateCommitsWithoutPrompts(t *testing.T) {
 	t.Log("Phase 4: New Claude work and commit")
 
 	// Now user enters new prompt and does more work
-	if err := env.SimulateUserPromptSubmit(session.ID); err != nil {
-		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
+	if err := env.SimulateUserPromptSubmitWithPrompt(session.ID, "Create function B in b.go"); err != nil {
+		t.Fatalf("SimulateUserPromptSubmitWithPrompt failed: %v", err)
 	}
 
 	fileBContent := "package main\n\nfunc B() {}\n"
@@ -1264,8 +1267,8 @@ func TestShadow_FullTranscriptCondensationWithIntermediateCommits(t *testing.T) 
 	t.Log("Phase 1: Session with two prompts")
 
 	session := env.NewSession()
-	if err := env.SimulateUserPromptSubmit(session.ID); err != nil {
-		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
+	if err := env.SimulateUserPromptSubmitWithPrompt(session.ID, "Create function A"); err != nil {
+		t.Fatalf("SimulateUserPromptSubmitWithPrompt failed: %v", err)
 	}
 
 	// First prompt
@@ -1278,6 +1281,9 @@ func TestShadow_FullTranscriptCondensationWithIntermediateCommits(t *testing.T) 
 	session.TranscriptBuilder.AddToolResult(toolID1)
 
 	// Second prompt in same session
+	if err := env.SimulateUserPromptSubmitWithPrompt(session.ID, "Create function B"); err != nil {
+		t.Fatalf("SimulateUserPromptSubmitWithPrompt (second prompt) failed: %v", err)
+	}
 	fileBContent := "package main\n\nfunc B() {}\n"
 	env.WriteFile("b.go", fileBContent)
 
@@ -1311,10 +1317,13 @@ func TestShadow_FullTranscriptCondensationWithIntermediateCommits(t *testing.T) 
 	}
 	t.Logf("First checkpoint prompts:\n%s", prompt1Content)
 
-	t.Log("Phase 3: Continue session with third prompt (no SimulateUserPromptSubmit)")
+	t.Log("Phase 3: Continue session with third prompt")
 
-	// Continue working WITHOUT calling SimulateUserPromptSubmit
-	// This simulates the case where HEAD moved but InitializeSession wasn't called
+	// Submit the new prompt through the hook so it gets recorded in prompt.txt
+	if err := env.SimulateUserPromptSubmitWithPrompt(session.ID, "Create function C"); err != nil {
+		t.Fatalf("SimulateUserPromptSubmitWithPrompt (third prompt) failed: %v", err)
+	}
+
 	fileCContent := "package main\n\nfunc C() {}\n"
 	env.WriteFile("c.go", fileCContent)
 
@@ -1332,7 +1341,7 @@ func TestShadow_FullTranscriptCondensationWithIntermediateCommits(t *testing.T) 
 		t.Fatalf("SimulateStop (second) failed: %v", err)
 	}
 
-	t.Log("Phase 4: Second commit (without intermediate prompt submit)")
+	t.Log("Phase 4: Second commit")
 
 	env.GitCommitWithShadowHooks("Add function C", "c.go")
 	commit2Hash := env.GetHeadHash()
@@ -1394,8 +1403,8 @@ func TestShadow_RewindPreservesUntrackedFilesWithExistingShadowBranch(t *testing
 
 	// First session - creates the shadow branch
 	session1 := env.NewSession()
-	if err := env.SimulateUserPromptSubmit(session1.ID); err != nil {
-		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
+	if err := env.SimulateUserPromptSubmitWithPrompt(session1.ID, "Create old.go"); err != nil {
+		t.Fatalf("SimulateUserPromptSubmitWithPrompt failed: %v", err)
 	}
 
 	env.WriteFile("old.go", "package main\n")
@@ -1423,8 +1432,8 @@ func TestShadow_RewindPreservesUntrackedFilesWithExistingShadowBranch(t *testing
 
 	// Continue the SAME session (Claude resumes with the same session ID)
 	// This is the expected behavior - continuing work on the same base commit
-	if err := env.SimulateUserPromptSubmit(session1.ID); err != nil {
-		t.Fatalf("SimulateUserPromptSubmit (continue session) failed: %v", err)
+	if err := env.SimulateUserPromptSubmitWithPrompt(session1.ID, "Create A"); err != nil {
+		t.Fatalf("SimulateUserPromptSubmitWithPrompt (continue session) failed: %v", err)
 	}
 
 	// Reset transcript builder for next checkpoint
@@ -1456,8 +1465,8 @@ func TestShadow_RewindPreservesUntrackedFilesWithExistingShadowBranch(t *testing
 	t.Log("Phase 3: Create third checkpoint")
 
 	// Continue the session for the third checkpoint
-	if err := env.SimulateUserPromptSubmit(session1.ID); err != nil {
-		t.Fatalf("SimulateUserPromptSubmit (checkpoint 3) failed: %v", err)
+	if err := env.SimulateUserPromptSubmitWithPrompt(session1.ID, "Create B"); err != nil {
+		t.Fatalf("SimulateUserPromptSubmitWithPrompt (checkpoint 3) failed: %v", err)
 	}
 
 	// Reset transcript builder for next checkpoint
@@ -1526,8 +1535,8 @@ func TestShadow_TrailerRemovalSkipsCondensation(t *testing.T) {
 	t.Log("Phase 1: Create session with content")
 
 	session := env.NewSession()
-	if err := env.SimulateUserPromptSubmit(session.ID); err != nil {
-		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
+	if err := env.SimulateUserPromptSubmitWithPrompt(session.ID, "Create function A"); err != nil {
+		t.Fatalf("SimulateUserPromptSubmitWithPrompt failed: %v", err)
 	}
 
 	fileAContent := "package main\n\nfunc A() {}\n"
@@ -1577,8 +1586,8 @@ func TestShadow_TrailerRemovalSkipsCondensation(t *testing.T) {
 	t.Log("Phase 4: Now commit WITH trailer (user keeps it)")
 
 	// Continue session with new content
-	if err := env.SimulateUserPromptSubmit(session.ID); err != nil {
-		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
+	if err := env.SimulateUserPromptSubmitWithPrompt(session.ID, "Create function B"); err != nil {
+		t.Fatalf("SimulateUserPromptSubmitWithPrompt failed: %v", err)
 	}
 
 	fileBContent := "package main\n\nfunc B() {}\n"
@@ -1644,8 +1653,8 @@ func TestShadow_SessionsBranchCommitTrailers(t *testing.T) {
 
 	// Start session and create checkpoint
 	session := env.NewSession()
-	if err := env.SimulateUserPromptSubmit(session.ID); err != nil {
-		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
+	if err := env.SimulateUserPromptSubmitWithPrompt(session.ID, "Create main.go"); err != nil {
+		t.Fatalf("SimulateUserPromptSubmitWithPrompt failed: %v", err)
 	}
 
 	fileContent := "package main\n\nfunc main() {}\n"

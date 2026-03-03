@@ -198,27 +198,6 @@ func ExtractAllUserPromptsFromTranscript(transcript *GeminiTranscript) []string 
 	return prompts
 }
 
-// ExtractLastAssistantMessage extracts the last gemini response from transcript data
-func ExtractLastAssistantMessage(data []byte) (string, error) {
-	transcript, err := ParseTranscript(data)
-	if err != nil {
-		return "", err
-	}
-
-	return ExtractLastAssistantMessageFromTranscript(transcript), nil
-}
-
-// ExtractLastAssistantMessageFromTranscript extracts the last gemini response from a parsed transcript
-func ExtractLastAssistantMessageFromTranscript(transcript *GeminiTranscript) string {
-	for i := len(transcript.Messages) - 1; i >= 0; i-- {
-		msg := transcript.Messages[i]
-		if msg.Type == MessageTypeGemini && msg.Content != "" {
-			return msg.Content
-		}
-	}
-	return ""
-}
-
 // GetLastMessageID returns the ID of the last message in the transcript.
 // Returns empty string if the transcript is empty or the last message has no ID.
 func GetLastMessageID(data []byte) (string, error) {

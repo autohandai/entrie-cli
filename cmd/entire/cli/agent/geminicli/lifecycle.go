@@ -89,15 +89,6 @@ func (g *GeminiCLIAgent) ExtractPrompts(sessionRef string, fromOffset int) ([]st
 	return prompts, nil
 }
 
-// ExtractSummary extracts the last assistant message as a session summary.
-func (g *GeminiCLIAgent) ExtractSummary(sessionRef string) (string, error) {
-	data, err := os.ReadFile(sessionRef) //nolint:gosec // Path comes from agent hook input
-	if err != nil {
-		return "", fmt.Errorf("failed to read transcript: %w", err)
-	}
-	return ExtractLastAssistantMessage(data)
-}
-
 // CalculateTokenUsage computes token usage from the transcript starting at the given message offset.
 func (g *GeminiCLIAgent) CalculateTokenUsage(transcriptData []byte, fromOffset int) (*agent.TokenUsage, error) {
 	var transcript struct {

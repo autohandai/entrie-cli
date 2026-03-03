@@ -147,9 +147,6 @@ type TranscriptAnalyzer interface {
 
 	// ExtractPrompts extracts user prompts from the transcript starting at the given offset.
 	ExtractPrompts(sessionRef string, fromOffset int) ([]string, error)
-
-	// ExtractSummary extracts a summary of the session from the transcript.
-	ExtractSummary(sessionRef string) (string, error)
 }
 
 // TranscriptPreparer is called before ReadTranscript to handle agent-specific

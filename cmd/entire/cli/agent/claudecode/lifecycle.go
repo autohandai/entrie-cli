@@ -104,36 +104,6 @@ func (c *ClaudeCodeAgent) ExtractPrompts(sessionRef string, fromOffset int) ([]s
 	return prompts, nil
 }
 
-// ExtractSummary extracts the last assistant message as a session summary.
-func (c *ClaudeCodeAgent) ExtractSummary(sessionRef string) (string, error) {
-	data, err := os.ReadFile(sessionRef) //nolint:gosec // Path comes from agent hook input
-	if err != nil {
-		return "", fmt.Errorf("failed to read transcript: %w", err)
-	}
-
-	lines, parseErr := transcript.ParseFromBytes(data)
-	if parseErr != nil {
-		return "", fmt.Errorf("failed to parse transcript: %w", parseErr)
-	}
-
-	// Walk backward to find last assistant text block
-	for i := len(lines) - 1; i >= 0; i-- {
-		if lines[i].Type != transcript.TypeAssistant {
-			continue
-		}
-		var msg transcript.AssistantMessage
-		if err := json.Unmarshal(lines[i].Message, &msg); err != nil {
-			continue
-		}
-		for _, block := range msg.Content {
-			if block.Type == transcript.ContentTypeText && block.Text != "" {
-				return block.Text, nil
-			}
-		}
-	}
-	return "", nil
-}
-
 // PrepareTranscript waits for Claude Code's async transcript flush to complete.
 // Claude writes a hook_progress sentinel entry after flushing all pending writes.
 func (c *ClaudeCodeAgent) PrepareTranscript(ctx context.Context, sessionRef string) error {

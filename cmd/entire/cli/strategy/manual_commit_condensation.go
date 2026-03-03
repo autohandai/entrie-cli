@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
@@ -464,8 +465,16 @@ func (s *ManualCommitStrategy) extractSessionData(ctx context.Context, repo *git
 	if fullTranscript != "" {
 		data.Transcript = []byte(fullTranscript)
 		data.FullTranscriptLines = countTranscriptItems(agentType, fullTranscript)
-		// Extract only prompts from the current checkpoint portion (not the entire session)
-		data.Prompts = extractCheckpointPrompts(agentType, data.Transcript, checkpointTranscriptStart)
+		// Read prompts from shadow branch tree (source of truth after SaveStep)
+		if file, fileErr := tree.File(metadataDir + "/" + paths.PromptFileName); fileErr == nil {
+			if content, contentErr := file.Contents(); contentErr == nil && content != "" {
+				data.Prompts = splitPromptContent(content)
+			}
+		}
+		// Filesystem fallback (written at turn start, covers mid-turn commits)
+		if len(data.Prompts) == 0 {
+			data.Prompts = readPromptsFromFilesystem(ctx, sessionID)
+		}
 	}
 
 	// Use tracked files from session state (not all files in tree)
@@ -503,8 +512,7 @@ func (s *ManualCommitStrategy) extractSessionDataFromLiveTranscript(ctx context.
 	fullTranscript := string(liveData)
 	data.Transcript = liveData
 	data.FullTranscriptLines = countTranscriptItems(state.AgentType, fullTranscript)
-	// Extract only prompts from the current checkpoint portion (not the entire session)
-	data.Prompts = extractCheckpointPrompts(state.AgentType, data.Transcript, state.CheckpointTranscriptStart)
+	data.Prompts = readPromptsFromFilesystem(ctx, state.SessionID)
 
 	// Extract files from transcript since state.FilesTouched may be empty for mid-session commits
 	// (no SaveStep/Stop has been called yet to populate it)
@@ -724,6 +732,51 @@ func extractUserPromptsFromLines(lines []string) []string {
 		}
 	}
 	return prompts
+}
+
+// splitPromptContent splits prompt.txt content on the "\n\n---\n\n" separator.
+// Returns nil if content is empty.
+func splitPromptContent(content string) []string {
+	if content == "" {
+		return nil
+	}
+	parts := strings.Split(content, "\n\n---\n\n")
+	var result []string
+	for _, p := range parts {
+		trimmed := strings.TrimSpace(p)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
+// readPromptsFromFilesystem reads prompt.txt from the filesystem session metadata directory.
+// This file is written at turn start and updated at each SaveStep, providing prompt data
+// even for mid-turn commits where the shadow branch may not have been updated.
+func readPromptsFromFilesystem(ctx context.Context, sessionID string) []string {
+	sessionDir := paths.SessionMetadataDirFromSessionID(sessionID)
+	sessionDirAbs, err := paths.AbsPath(ctx, sessionDir)
+	if err != nil {
+		return nil
+	}
+	data, err := os.ReadFile(filepath.Join(sessionDirAbs, paths.PromptFileName)) //nolint:gosec // path from session ID
+	if err != nil || len(data) == 0 {
+		return nil
+	}
+	return splitPromptContent(string(data))
+}
+
+// clearFilesystemPrompt removes the filesystem prompt.txt for a session.
+// Called after condensation so subsequent checkpoints start fresh.
+func clearFilesystemPrompt(ctx context.Context, sessionID string) {
+	sessionDir := paths.SessionMetadataDirFromSessionID(sessionID)
+	sessionDirAbs, err := paths.AbsPath(ctx, sessionDir)
+	if err != nil {
+		return
+	}
+	promptPath := filepath.Join(sessionDirAbs, paths.PromptFileName)
+	_ = os.Remove(promptPath) //nolint:errcheck // best-effort cleanup
 }
 
 // CondenseSessionByID force-condenses a session by its ID and cleans up.

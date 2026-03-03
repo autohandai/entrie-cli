@@ -14,7 +14,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
@@ -138,6 +137,26 @@ func handleLifecycleTurnStart(ctx context.Context, ag agent.Agent, event *agent.
 		return err
 	}
 
+	// Append prompt to prompt.txt on filesystem so it's available for
+	// mid-turn commits (before SaveStep writes it to the shadow branch).
+	// Prompts are separated by "\n\n---\n\n" to support multiple turns.
+	if event.Prompt != "" {
+		sessionDir := paths.SessionMetadataDirFromSessionID(sessionID)
+		if sessionDirAbs, absErr := paths.AbsPath(ctx, sessionDir); absErr == nil {
+			if mkErr := os.MkdirAll(sessionDirAbs, 0o750); mkErr == nil {
+				promptPath := filepath.Join(sessionDirAbs, paths.PromptFileName)
+				existing, _ := os.ReadFile(promptPath) //nolint:gosec // session metadata path
+				var content string
+				if len(existing) > 0 {
+					content = string(existing) + "\n\n---\n\n" + event.Prompt
+				} else {
+					content = event.Prompt
+				}
+				_ = os.WriteFile(promptPath, []byte(content), 0o600)
+			}
+		}
+	}
+
 	// Ensure strategy setup and initialize session
 	if err := strategy.EnsureSetup(ctx); err != nil {
 		logging.Warn(logCtx, "failed to ensure strategy setup",
@@ -234,28 +253,10 @@ func handleLifecycleTurnEnd(ctx context.Context, ag agent.Agent, event *agent.Ev
 	// Subagent transcripts live in <transcriptDir>/<modelSessionID>/subagents/
 	subagentsDir := filepath.Join(filepath.Dir(transcriptRef), event.SessionID, "subagents")
 
-	// Extract metadata via agent interface (prompts, summary, modified files)
-	var allPrompts []string
-	var summary string
+	// Extract metadata via agent interface (modified files)
 	var modifiedFiles []string
 
 	if analyzer, ok := ag.(agent.TranscriptAnalyzer); ok {
-		// Extract prompts
-		if prompts, promptErr := analyzer.ExtractPrompts(transcriptRef, transcriptOffset); promptErr != nil {
-			logging.Warn(logCtx, "failed to extract prompts",
-				slog.String("error", promptErr.Error()))
-		} else {
-			allPrompts = prompts
-		}
-
-		// Extract summary
-		if s, sumErr := analyzer.ExtractSummary(transcriptRef); sumErr != nil {
-			logging.Warn(logCtx, "failed to extract summary",
-				slog.String("error", sumErr.Error()))
-		} else {
-			summary = s
-		}
-
 		// Extract modified files - prefer SubagentAwareExtractor if available to include subagent files
 		if subagentExtractor, subOk := ag.(agent.SubagentAwareExtractor); subOk {
 			if files, fileErr := subagentExtractor.ExtractAllModifiedFiles(transcriptData, transcriptOffset, subagentsDir); fileErr != nil {
@@ -275,28 +276,10 @@ func handleLifecycleTurnEnd(ctx context.Context, ag agent.Agent, event *agent.Ev
 		}
 	}
 
-	// Write prompts file
-	promptFile := filepath.Join(sessionDirAbs, paths.PromptFileName)
-	promptContent := strings.Join(allPrompts, "\n\n---\n\n")
-	if err := os.WriteFile(promptFile, []byte(promptContent), 0o600); err != nil {
-		return fmt.Errorf("failed to write prompt file: %w", err)
-	}
-	logging.Debug(logCtx, "extracted prompts",
-		slog.Int("count", len(allPrompts)),
-		slog.String("path", sessionDir+"/"+paths.PromptFileName))
-
-	// Write summary file
-	summaryFile := filepath.Join(sessionDirAbs, paths.SummaryFileName)
-	if err := os.WriteFile(summaryFile, []byte(summary), 0o600); err != nil {
-		return fmt.Errorf("failed to write summary file: %w", err)
-	}
-	logging.Debug(logCtx, "extracted summary",
-		slog.String("path", sessionDir+"/"+paths.SummaryFileName))
-
-	// Generate commit message from last prompt
+	// Generate commit message from last prompt (read from session state, set at TurnStart)
 	lastPrompt := ""
-	if len(allPrompts) > 0 {
-		lastPrompt = allPrompts[len(allPrompts)-1]
+	if sessionState, stateErr := strategy.LoadSessionState(ctx, sessionID); stateErr == nil && sessionState != nil {
+		lastPrompt = sessionState.LastPrompt
 	}
 	commitMessage := generateCommitMessage(lastPrompt, ag.Type())
 	logging.Debug(logCtx, "using commit message",

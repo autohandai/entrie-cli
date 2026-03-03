@@ -227,32 +227,6 @@ func (a *OpenCodeAgent) ExtractPrompts(sessionRef string, fromOffset int) ([]str
 	return prompts, nil
 }
 
-// ExtractSummary extracts the last assistant message content as a summary.
-func (a *OpenCodeAgent) ExtractSummary(sessionRef string) (string, error) {
-	session, err := parseExportSessionFromFile(sessionRef)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", nil
-		}
-		return "", err
-	}
-	if session == nil {
-		return "", nil
-	}
-
-	for i := len(session.Messages) - 1; i >= 0; i-- {
-		msg := session.Messages[i]
-		if msg.Info.Role == roleAssistant {
-			content := ExtractTextFromParts(msg.Parts)
-			if content != "" {
-				return content, nil
-			}
-		}
-	}
-
-	return "", nil
-}
-
 // ExtractTextFromParts extracts text content from message parts.
 func ExtractTextFromParts(parts []Part) string {
 	var texts []string
