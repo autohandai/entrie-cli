@@ -133,8 +133,7 @@ func (a *AutohandCodeAgent) InstallHooks(ctx context.Context, localDev bool, for
 	var rules []AutohandPermissionRule
 	if rulesRaw, ok := rawPermissions["rules"]; ok {
 		if err := json.Unmarshal(rulesRaw, &rules); err != nil {
-			// If parsing fails, start with empty rules
-			rules = nil
+			return 0, fmt.Errorf("failed to parse permissions.rules in config.json: %w", err)
 		}
 	}
 	if !permissionRuleExists(rules, metadataDenyRule) {
