@@ -37,7 +37,9 @@ func mockInfoScript(infoJSON string) string {
 	return `#!/bin/sh
 case "$1" in
   info)
-    echo '` + infoJSON + `'
+    cat <<'ENTIRE_EOF'
+` + infoJSON + `
+ENTIRE_EOF
     ;;
   detect)
     echo '{"present": true}'
