@@ -12,10 +12,10 @@ import (
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
-// getNonAgentChangedFiles returns all files that changed between the attribution base
+// getAllChangedFiles returns all files that changed between the attribution base
 // and HEAD. When commit hashes are provided, uses fast git diff-tree CLI; otherwise
 // falls back to go-git tree walk (used by CondenseSessionByID / doctor command).
-func getNonAgentChangedFiles(ctx context.Context, baseTree, headTree *object.Tree, baseCommitHash, headCommitHash string) ([]string, error) {
+func getAllChangedFiles(ctx context.Context, baseTree, headTree *object.Tree, baseCommitHash, headCommitHash string) ([]string, error) {
 	// Fast path: use git diff-tree when commit hashes are available
 	if baseCommitHash != "" && headCommitHash != "" {
 		return gitops.DiffTreeFileList(ctx, baseCommitHash, headCommitHash) //nolint:wrapcheck // Propagating gitops error
@@ -241,12 +241,12 @@ func CalculateAttributionWithAccumulated(
 
 	// Calculate total user edits to non-agent files (files not in filesTouched)
 	// These files are not in the shadow tree, so base→head captures ALL their user edits
-	nonAgentFiles, err := getNonAgentChangedFiles(ctx, baseTree, headTree, attributionBaseCommit, headCommitHash)
+	allChangedFiles, err := getAllChangedFiles(ctx, baseTree, headTree, attributionBaseCommit, headCommitHash)
 	if err != nil {
 		return nil
 	}
 	var allUserEditsToNonAgentFiles int
-	for _, filePath := range nonAgentFiles {
+	for _, filePath := range allChangedFiles {
 		if slices.Contains(filesTouched, filePath) {
 			continue // Skip agent-touched files
 		}
@@ -263,8 +263,8 @@ func CalculateAttributionWithAccumulated(
 	// - Non-agent files that appear in the commit (base→head diff)
 	// Files not in either set are worktree-only changes (e.g., .claude/settings.json)
 	// that should not affect attribution.
-	committedNonAgentSet := make(map[string]struct{}, len(nonAgentFiles))
-	for _, f := range nonAgentFiles {
+	committedNonAgentSet := make(map[string]struct{}, len(allChangedFiles))
+	for _, f := range allChangedFiles {
 		if !slices.Contains(filesTouched, f) {
 			committedNonAgentSet[f] = struct{}{}
 		}
