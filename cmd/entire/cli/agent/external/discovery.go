@@ -38,15 +38,12 @@ func DiscoverAndRegister(ctx context.Context) {
 
 	seen := make(map[string]bool) // deduplicate binaries across PATH dirs
 	for _, dir := range filepath.SplitList(pathEnv) {
-		entries, err := os.ReadDir(dir)
+		matches, err := filepath.Glob(filepath.Join(dir, binaryPrefix+"*"))
 		if err != nil {
 			continue // skip unreadable directories
 		}
-		for _, entry := range entries {
-			name := entry.Name()
-			if !strings.HasPrefix(name, binaryPrefix) {
-				continue
-			}
+		for _, binPath := range matches {
+			name := filepath.Base(binPath)
 			if seen[name] {
 				continue
 			}
@@ -60,7 +57,6 @@ func DiscoverAndRegister(ctx context.Context) {
 				continue
 			}
 
-			binPath := filepath.Join(dir, name)
 			finfo, err := os.Stat(binPath) //nolint:gosec // PATH entries are trusted
 			if err != nil || finfo.IsDir() {
 				continue
