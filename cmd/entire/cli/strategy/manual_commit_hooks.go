@@ -905,12 +905,14 @@ func (s *ManualCommitStrategy) postCommitProcessSession(
 
 	// Save FilesTouched BEFORE TransitionAndLog — the handler's condensation
 	// clears it, but we need the original list for carry-forward computation.
-	// For mid-session commits (ACTIVE, no shadow branch), state.FilesTouched may be empty
-	// because no SaveStep/Stop has been called yet. Extract files from transcript.
-	filesTouchedBefore := make([]string, len(state.FilesTouched))
-	copy(filesTouchedBefore, state.FilesTouched)
-	if len(filesTouchedBefore) == 0 && state.Phase.IsActive() && state.TranscriptPath != "" {
-		filesTouchedBefore = s.extractFilesFromLiveTranscript(ctx, state)
+	// Only fall back to transcript extraction for ACTIVE sessions — IDLE/ENDED
+	// sessions have FilesTouched already populated by SaveStep/mergeFilesTouched.
+	var filesTouchedBefore []string
+	if state.Phase.IsActive() {
+		filesTouchedBefore = s.resolveFilesTouched(ctx, state)
+	} else if len(state.FilesTouched) > 0 {
+		filesTouchedBefore = make([]string, len(state.FilesTouched))
+		copy(filesTouchedBefore, state.FilesTouched)
 	}
 
 	logging.Debug(logCtx, "post-commit: carry-forward prep",
@@ -977,6 +979,13 @@ func (s *ManualCommitStrategy) postCommitProcessSession(
 		)
 		if len(remainingFiles) > 0 {
 			s.carryForwardToNewShadowBranch(ctx, repo, state, remainingFiles)
+		}
+
+		// Clear filesystem prompt.txt only when ALL files are committed.
+		// If carry-forward files remain, the prompt must persist so the next
+		// condensation (triggered by the next commit) can read it.
+		if len(remainingFiles) == 0 {
+			clearFilesystemPrompt(ctx, state.SessionID)
 		}
 	}
 
@@ -1048,6 +1057,10 @@ func (s *ManualCommitStrategy) condenseAndUpdateState(
 	state.PromptAttributions = nil
 	state.PendingPromptAttribution = nil
 	state.FilesTouched = nil
+
+	// NOTE: filesystem prompt.txt is NOT cleared here. The caller (PostCommit handler)
+	// decides whether to clear it based on carry-forward: if remaining files exist,
+	// the prompt must persist so the next condensation can read it.
 
 	// Save checkpoint ID so subsequent commits can reuse it (e.g., amend restores trailer)
 	state.LastCheckpointID = checkpointID
@@ -1339,8 +1352,18 @@ func (s *ManualCommitStrategy) sessionHasNewContent(ctx context.Context, repo *g
 func (s *ManualCommitStrategy) sessionHasNewContentFromLiveTranscript(ctx context.Context, state *SessionState, stagedFiles []string) (bool, error) {
 	logCtx := logging.WithComponent(ctx, "checkpoint")
 
-	modifiedFiles, ok := s.extractNewModifiedFilesFromLiveTranscript(ctx, state)
-	if !ok || len(modifiedFiles) == 0 {
+	if !s.hasNewTranscriptWork(ctx, state) {
+		return false, nil
+	}
+
+	// Prefer hook-populated files. If empty, extract from transcript directly —
+	// hasNewTranscriptWork already called PrepareTranscript, so we bypass
+	// resolveFilesTouched (which would prepare again) and extract directly.
+	modifiedFiles := state.FilesTouched
+	if len(modifiedFiles) == 0 {
+		modifiedFiles = s.extractModifiedFilesFromLiveTranscript(ctx, state, state.CheckpointTranscriptStart)
+	}
+	if len(modifiedFiles) == 0 {
 		return false, nil
 	}
 
@@ -1365,36 +1388,50 @@ func (s *ManualCommitStrategy) sessionHasNewContentFromLiveTranscript(ctx contex
 	return true, nil
 }
 
-// extractFilesFromLiveTranscript extracts modified file paths from the live transcript.
-// Returns empty slice if extraction fails (fail-open behavior for hooks).
-// Extracts files from the transcript starting at CheckpointTranscriptStart, which gives
-// files touched since the last condensation — used for carry-forward computation.
-func (s *ManualCommitStrategy) extractFilesFromLiveTranscript(ctx context.Context, state *SessionState) []string {
+// resolveFilesTouched returns the file list for a session.
+// Prefers hook-populated state.FilesTouched, falls back to transcript extraction.
+// All call sites that need "what files did the agent touch?" should use this.
+//
+// Handles PrepareTranscript internally before falling back to extraction,
+// so callers don't need to prepare the transcript first.
+func (s *ManualCommitStrategy) resolveFilesTouched(ctx context.Context, state *SessionState) []string {
+	if len(state.FilesTouched) > 0 {
+		result := make([]string, len(state.FilesTouched))
+		copy(result, state.FilesTouched)
+		return result
+	}
+
+	// Prepare transcript before extraction (e.g., OpenCode `opencode export`).
+	prepareTranscriptForState(ctx, state)
+
 	return s.extractModifiedFilesFromLiveTranscript(ctx, state, state.CheckpointTranscriptStart)
 }
 
-// extractNewModifiedFilesFromLiveTranscript extracts modified files from the live
-// transcript that are NEW since the last condensation. Returns the normalized file list
-// and whether the extraction succeeded. Used by sessionHasNewContentFromLiveTranscript
-// to detect agent work.
-func (s *ManualCommitStrategy) extractNewModifiedFilesFromLiveTranscript(ctx context.Context, state *SessionState) ([]string, bool) {
+// hasNewTranscriptWork checks if the agent has done work since the last condensation.
+// Uses agent-delegated GetTranscriptPosition() — does NOT do file extraction.
+// All call sites that need "has the agent done new work?" should use this.
+//
+// Returns false if: no transcript path, unknown agent type, agent doesn't implement
+// TranscriptAnalyzer, or GetTranscriptPosition fails. This is intentional fail-safe
+// behavior: callers treat false as "no new work detected", which conservatively
+// skips condensation on errors.
+func (s *ManualCommitStrategy) hasNewTranscriptWork(ctx context.Context, state *SessionState) bool {
 	logCtx := logging.WithComponent(ctx, "checkpoint")
 
 	if state.TranscriptPath == "" || state.AgentType == "" {
-		return nil, false
+		return false
 	}
 
 	ag, err := agent.GetByAgentType(state.AgentType)
 	if err != nil {
-		return nil, false
+		return false
 	}
 
 	// Ensure transcript file is up-to-date (OpenCode creates/refreshes it via `opencode export`).
 	// Only wait for flush when the session is active — for idle/ended sessions the
 	// transcript is already fully flushed (the Stop hook completed the flush).
-	// Skipping the wait avoids a 3s timeout per session in prepare-commit-msg/post-commit hooks.
 	if state.Phase.IsActive() {
-		if preparer, ok := ag.(agent.TranscriptPreparer); ok {
+		if preparer, ok := agent.AsTranscriptPreparer(ag); ok {
 			if prepErr := preparer.PrepareTranscript(ctx, state.TranscriptPath); prepErr != nil {
 				logging.Debug(logCtx, "prepare transcript failed",
 					slog.String("session_id", state.SessionID),
@@ -1405,32 +1442,39 @@ func (s *ManualCommitStrategy) extractNewModifiedFilesFromLiveTranscript(ctx con
 			}
 		}
 	}
-
-	analyzer, ok := ag.(agent.TranscriptAnalyzer)
+	analyzer, ok := agent.AsTranscriptAnalyzer(ag)
 	if !ok {
-		return nil, false
+		return false
 	}
 
-	// Check if transcript has grown since last condensation
 	currentPos, err := analyzer.GetTranscriptPosition(state.TranscriptPath)
 	if err != nil {
-		return nil, false
+		logging.Debug(logCtx, "hasNewTranscriptWork: GetTranscriptPosition failed",
+			slog.String("session_id", state.SessionID),
+			slog.String("transcript_path", state.TranscriptPath),
+			slog.Any("error", err),
+		)
+		return false
 	}
+
 	if currentPos <= state.CheckpointTranscriptStart {
-		logging.Debug(logCtx, "live transcript check: no new content",
+		logging.Debug(logCtx, "hasNewTranscriptWork: no new content",
 			slog.String("session_id", state.SessionID),
 			slog.Int("current_pos", currentPos),
 			slog.Int("start_offset", state.CheckpointTranscriptStart),
 		)
-		return nil, true // No new content, but extraction succeeded
+		return false
 	}
 
-	return s.extractModifiedFilesFromLiveTranscript(ctx, state, state.CheckpointTranscriptStart), true
+	return true
 }
 
 // extractModifiedFilesFromLiveTranscript extracts modified files from the live transcript
 // (including subagent transcripts) starting from the given offset, and normalizes them
 // to repo-relative paths. Returns the normalized file list.
+//
+// Callers must ensure the transcript is prepared (e.g., via prepareTranscriptForState
+// or hasNewTranscriptWork) before calling this function.
 func (s *ManualCommitStrategy) extractModifiedFilesFromLiveTranscript(ctx context.Context, state *SessionState, offset int) []string {
 	logCtx := logging.WithComponent(ctx, "checkpoint")
 
@@ -1443,23 +1487,7 @@ func (s *ManualCommitStrategy) extractModifiedFilesFromLiveTranscript(ctx contex
 		return nil
 	}
 
-	// Ensure transcript file is up-to-date (OpenCode creates/refreshes it via `opencode export`).
-	// Only wait for flush when the session is active — for idle/ended sessions the
-	// transcript is already fully flushed (the Stop hook completed the flush).
-	if state.Phase.IsActive() {
-		if preparer, ok := ag.(agent.TranscriptPreparer); ok {
-			if prepErr := preparer.PrepareTranscript(ctx, state.TranscriptPath); prepErr != nil {
-				logging.Debug(logCtx, "prepare transcript failed",
-					slog.String("session_id", state.SessionID),
-					slog.String("agent_type", string(state.AgentType)),
-					slog.String("transcript_path", state.TranscriptPath),
-					slog.Any("error", prepErr),
-				)
-			}
-		}
-	}
-
-	analyzer, ok := ag.(agent.TranscriptAnalyzer)
+	analyzer, ok := agent.AsTranscriptAnalyzer(ag)
 	if !ok {
 		return nil
 	}
@@ -1682,7 +1710,8 @@ func addCheckpointTrailerWithComment(message string, checkpointID id.CheckpointI
 //
 // agentType is the human-readable name of the agent (e.g., "Claude Code").
 // transcriptPath is the path to the live transcript file (for mid-session commit detection).
-// userPrompt is the user's prompt text (stored truncated as FirstPrompt for display).
+// userPrompt is the user's prompt text (stored truncated as LastPrompt for display).
+// model is the LLM model identifier (e.g., "claude-sonnet-4-20250514"); empty if unknown.
 func (s *ManualCommitStrategy) InitializeSession(ctx context.Context, sessionID string, agentType types.AgentType, transcriptPath string, userPrompt string, model string) error {
 	repo, err := OpenRepository(ctx)
 	if err != nil {
@@ -1720,9 +1749,9 @@ func (s *ManualCommitStrategy) InitializeSession(ctx context.Context, sessionID 
 			state.ModelName = model
 		}
 
-		// Backfill FirstPrompt if empty (for sessions created before the first_prompt field was added)
-		if state.FirstPrompt == "" && userPrompt != "" {
-			state.FirstPrompt = truncatePromptForStorage(userPrompt)
+		// Update LastPrompt on every turn so condensation always has the current prompt
+		if userPrompt != "" {
+			state.LastPrompt = truncatePromptForStorage(userPrompt)
 		}
 
 		// Update transcript path if provided (may change on session resume)
@@ -1983,6 +2012,42 @@ func extractLastPrompt(content string) string {
 	return ""
 }
 
+// TODO: check if its duplicated
+// readPromptsFromShadowBranch reads prompt.txt from the shadow branch tree.
+// Returns all prompts split on "\n\n---\n\n", or nil if prompt.txt is not available.
+func readPromptsFromShadowBranch(_ context.Context, repo *git.Repository, state *SessionState) []string {
+	shadowBranchName := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
+	refName := plumbing.NewBranchReferenceName(shadowBranchName)
+	ref, err := repo.Reference(refName, true)
+	if err != nil {
+		return nil
+	}
+
+	commit, err := repo.CommitObject(ref.Hash())
+	if err != nil {
+		return nil
+	}
+
+	tree, err := commit.Tree()
+	if err != nil {
+		return nil
+	}
+
+	metadataDir := paths.EntireMetadataDir + "/" + state.SessionID
+	promptPath := metadataDir + "/" + paths.PromptFileName
+	file, err := tree.File(promptPath)
+	if err != nil {
+		return nil
+	}
+
+	content, err := file.Contents()
+	if err != nil {
+		return nil
+	}
+
+	return splitPromptContent(content)
+}
+
 // HandleTurnEnd dispatches strategy-specific actions emitted when an agent turn ends.
 // The primary job is to finalize all checkpoints from this turn with the full transcript.
 //
@@ -2055,9 +2120,20 @@ func (s *ManualCommitStrategy) finalizeAllTurnCheckpoints(ctx context.Context, s
 		return 1 // Count as error - all checkpoints will be skipped
 	}
 
-	// Extract prompts and context from the full transcript
-	prompts := extractUserPrompts(state.AgentType, string(fullTranscript))
-	contextBytes := generateContextFromPrompts(prompts)
+	// Open repository (needed for shadow branch prompt reading and checkpoint store)
+	repo, err := OpenRepository(ctx)
+	if err != nil {
+		logging.Warn(logCtx, "finalize: failed to open repository",
+			slog.String("error", err.Error()),
+		)
+		state.TurnCheckpointIDs = nil
+		return 1 // Count as error - all checkpoints will be skipped
+	}
+
+	prompts := readPromptsFromShadowBranch(ctx, repo, state)
+	if len(prompts) == 0 {
+		prompts = readPromptsFromFilesystem(ctx, state.SessionID)
+	}
 
 	// Redact secrets before writing — matches WriteCommitted behavior.
 	// The live transcript on disk contains raw content; redaction must happen
@@ -2074,17 +2150,7 @@ func (s *ManualCommitStrategy) finalizeAllTurnCheckpoints(ctx context.Context, s
 	for i, p := range prompts {
 		prompts[i] = redact.String(p)
 	}
-	contextBytes = redact.Bytes(contextBytes)
 
-	// Open repository and create checkpoint store
-	repo, err := OpenRepository(ctx)
-	if err != nil {
-		logging.Warn(logCtx, "finalize: failed to open repository",
-			slog.String("error", err.Error()),
-		)
-		state.TurnCheckpointIDs = nil
-		return 1 // Count as error - all checkpoints will be skipped
-	}
 	store := checkpoint.NewGitStore(repo)
 
 	// Update each checkpoint with the full transcript
@@ -2104,7 +2170,6 @@ func (s *ManualCommitStrategy) finalizeAllTurnCheckpoints(ctx context.Context, s
 			SessionID:    state.SessionID,
 			Transcript:   fullTranscript,
 			Prompts:      prompts,
-			Context:      contextBytes,
 			Agent:        state.AgentType,
 		})
 		if updateErr != nil {

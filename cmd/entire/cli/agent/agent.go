@@ -144,12 +144,6 @@ type TranscriptAnalyzer interface {
 	//   - currentPosition: the current position (line count or message count)
 	//   - error: any error encountered during reading
 	ExtractModifiedFilesFromOffset(path string, startOffset int) (files []string, currentPosition int, err error)
-
-	// ExtractPrompts extracts user prompts from the transcript starting at the given offset.
-	ExtractPrompts(sessionRef string, fromOffset int) ([]string, error)
-
-	// ExtractSummary extracts a summary of the session from the transcript.
-	ExtractSummary(sessionRef string) (string, error)
 }
 
 // TranscriptPreparer is called before ReadTranscript to handle agent-specific
@@ -193,6 +187,13 @@ type HookResponseWriter interface {
 
 	// WriteHookResponse outputs a message to the user via the agent's hook response protocol.
 	WriteHookResponse(message string) error
+}
+
+// TestOnly is implemented by agents that exist solely for testing (e.g., the Vogon canary agent).
+// These agents are excluded from the user-facing agent selection in `entire enable`.
+type TestOnly interface {
+	Agent
+	IsTestOnly() bool
 }
 
 // SubagentAwareExtractor provides methods for extracting files and tokens including subagents.

@@ -283,7 +283,6 @@ func (s *GitStore) writeFinalTaskCheckpoint(ctx context.Context, opts WriteCommi
 //	│   ├── metadata.json     # CommittedMetadata (session-specific, includes initial_attribution)
 //	│   ├── full.jsonl
 //	│   ├── prompt.txt
-//	│   ├── context.md
 //	│   └── content_hash.txt
 //	├── 2/                    # Second session
 //	└── ...
@@ -335,7 +334,7 @@ func (s *GitStore) writeSessionToSubdirectory(ctx context.Context, opts WriteCom
 	filePaths := SessionFilePaths{}
 
 	// Clear any existing entries at this path so stale files from a previous
-	// write (e.g. prompt.txt, context.md) don't persist on overwrite.
+	// write (e.g. prompt.txt) don't persist on overwrite.
 	for key := range entries {
 		if strings.HasPrefix(key, sessionPath) {
 			delete(entries, key)
@@ -364,20 +363,6 @@ func (s *GitStore) writeSessionToSubdirectory(ctx context.Context, opts WriteCom
 		filePaths.Prompt = "/" + sessionPath + paths.PromptFileName
 	}
 
-	// Write context
-	if len(opts.Context) > 0 {
-		blobHash, err := CreateBlobFromContent(s.repo, redact.Bytes(opts.Context))
-		if err != nil {
-			return filePaths, err
-		}
-		entries[sessionPath+paths.ContextFileName] = object.TreeEntry{
-			Name: sessionPath + paths.ContextFileName,
-			Mode: filemode.Regular,
-			Hash: blobHash,
-		}
-		filePaths.Context = "/" + sessionPath + paths.ContextFileName
-	}
-
 	// Write session-level metadata.json (CommittedMetadata with all fields including initial_attribution)
 	sessionMetadata := CommittedMetadata{
 		CheckpointID:                opts.CheckpointID,
@@ -388,6 +373,7 @@ func (s *GitStore) writeSessionToSubdirectory(ctx context.Context, opts WriteCom
 		CheckpointsCount:            opts.CheckpointsCount,
 		FilesTouched:                opts.FilesTouched,
 		Agent:                       opts.Agent,
+		Model:                       opts.Model,
 		TurnID:                      opts.TurnID,
 		IsTask:                      opts.IsTask,
 		ToolUseID:                   opts.ToolUseID,
@@ -395,6 +381,7 @@ func (s *GitStore) writeSessionToSubdirectory(ctx context.Context, opts WriteCom
 		CheckpointTranscriptStart:   opts.CheckpointTranscriptStart,
 		TranscriptLinesAtStart:      opts.CheckpointTranscriptStart, // Deprecated: kept for backward compat
 		TokenUsage:                  opts.TokenUsage,
+		SessionMetrics:              opts.SessionMetrics,
 		InitialAttribution:          opts.InitialAttribution,
 		Summary:                     redactSummary(opts.Summary),
 		CLIVersion:                  versioninfo.Version,
@@ -834,13 +821,6 @@ func (s *GitStore) ReadSessionContent(ctx context.Context, checkpointID id.Check
 		}
 	}
 
-	// Read context
-	if file, fileErr := sessionTree.File(paths.ContextFileName); fileErr == nil {
-		if content, contentErr := file.Contents(); contentErr == nil {
-			result.Context = content
-		}
-	}
-
 	return result, nil
 }
 
@@ -1216,19 +1196,6 @@ func (s *GitStore) UpdateCommitted(ctx context.Context, opts UpdateCommittedOpti
 			Name: sessionPath + paths.PromptFileName,
 			Mode: filemode.Regular,
 			Hash: blobHash,
-		}
-	}
-
-	// Replace context (apply redaction as safety net)
-	if len(opts.Context) > 0 {
-		contextBlob, err := CreateBlobFromContent(s.repo, redact.Bytes(opts.Context))
-		if err != nil {
-			return fmt.Errorf("failed to create context blob: %w", err)
-		}
-		entries[sessionPath+paths.ContextFileName] = object.TreeEntry{
-			Name: sessionPath + paths.ContextFileName,
-			Mode: filemode.Regular,
-			Hash: contextBlob,
 		}
 	}
 

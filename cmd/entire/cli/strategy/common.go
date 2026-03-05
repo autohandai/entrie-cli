@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"github.com/entireio/cli/cmd/entire/cli/agent/types"
 	"github.com/entireio/cli/cmd/entire/cli/checkpoint"
 	"github.com/entireio/cli/cmd/entire/cli/checkpoint/id"
+	"github.com/entireio/cli/cmd/entire/cli/logging"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
 	"github.com/entireio/cli/cmd/entire/cli/trailers"
 
@@ -1252,13 +1254,13 @@ func createCommit(repo *git.Repository, treeHash, parentHash plumbing.Hash, mess
 	return hash, nil
 }
 
-// getSessionDescriptionFromTree reads the first line of prompt.txt or context.md from a git tree.
+// getSessionDescriptionFromTree reads the first line of prompt.txt from a git tree.
 // This is the tree-based equivalent of getSessionDescription (which reads from filesystem).
 //
-// If metadataDir is provided, looks for files at metadataDir/prompt.txt or metadataDir/context.md.
+// If metadataDir is provided, looks for files at metadataDir/prompt.txt.
 // If metadataDir is empty, first tries the root of the tree (for when the tree is already
 // the session directory), then falls back to
-// searching for .entire/metadata/*/prompt.txt or context.md (for full worktree trees).
+// searching for .entire/metadata/*/prompt.txt (for full worktree trees).
 func getSessionDescriptionFromTree(tree *object.Tree, metadataDir string) string {
 	// Helper to read first line from a file in tree
 	readFirstLine := func(path string) string {
@@ -1272,9 +1274,7 @@ func getSessionDescriptionFromTree(tree *object.Tree, metadataDir string) string
 		}
 		lines := strings.SplitN(content, "\n", 2)
 		if len(lines) > 0 && lines[0] != "" {
-			desc := strings.TrimSpace(lines[0])
-			// Remove markdown header prefix if present
-			return strings.TrimPrefix(desc, "# ")
+			return strings.TrimSpace(lines[0])
 		}
 		return ""
 	}
@@ -1282,9 +1282,6 @@ func getSessionDescriptionFromTree(tree *object.Tree, metadataDir string) string
 	// If metadataDir is provided, look there directly
 	if metadataDir != "" {
 		if desc := readFirstLine(metadataDir + "/" + paths.PromptFileName); desc != "" {
-			return desc
-		}
-		if desc := readFirstLine(metadataDir + "/" + paths.ContextFileName); desc != "" {
 			return desc
 		}
 		return NoDescription
@@ -1295,11 +1292,8 @@ func getSessionDescriptionFromTree(tree *object.Tree, metadataDir string) string
 	if desc := readFirstLine(paths.PromptFileName); desc != "" {
 		return desc
 	}
-	if desc := readFirstLine(paths.ContextFileName); desc != "" {
-		return desc
-	}
 
-	// Fall back to searching for .entire/metadata/*/prompt.txt or context.md
+	// Fall back to searching for .entire/metadata/*/prompt.txt
 	// (used when the tree is the full worktree)
 	var desc string
 	//nolint:errcheck // We ignore errors here as we're just searching for a description
@@ -1308,17 +1302,14 @@ func getSessionDescriptionFromTree(tree *object.Tree, metadataDir string) string
 			return nil // Already found description
 		}
 		name := f.Name
-		if strings.Contains(name, ".entire/metadata/") {
-			if strings.HasSuffix(name, "/"+paths.PromptFileName) || strings.HasSuffix(name, "/"+paths.ContextFileName) {
-				content, err := f.Contents()
-				if err != nil {
-					return nil //nolint:nilerr // Skip files we can't read, continue searching
-				}
-				lines := strings.SplitN(content, "\n", 2)
-				if len(lines) > 0 && lines[0] != "" {
-					desc = strings.TrimSpace(lines[0])
-					desc = strings.TrimPrefix(desc, "# ")
-				}
+		if strings.Contains(name, ".entire/metadata/") && strings.HasSuffix(name, "/"+paths.PromptFileName) {
+			content, err := f.Contents()
+			if err != nil {
+				return nil //nolint:nilerr // Skip files we can't read, continue searching
+			}
+			lines := strings.SplitN(content, "\n", 2)
+			if len(lines) > 0 && lines[0] != "" {
+				desc = strings.TrimSpace(lines[0])
 			}
 		}
 		return nil
@@ -1423,6 +1414,26 @@ func IsOnDefaultBranch(repo *git.Repository) (bool, string) {
 	return currentBranch == defaultBranch, currentBranch
 }
 
+// prepareTranscriptForState ensures the transcript is up-to-date for the given session.
+// Only prepares for ACTIVE sessions — IDLE/ENDED sessions are already flushed.
+// Resolves the agent from state.AgentType internally. Multiple calls are safe but
+// not free — callers should avoid redundant calls for performance.
+func prepareTranscriptForState(ctx context.Context, state *SessionState) {
+	if !state.Phase.IsActive() || state.TranscriptPath == "" || state.AgentType == "" {
+		return
+	}
+	ag, err := agent.GetByAgentType(state.AgentType)
+	if err != nil {
+		logging.Debug(ctx, "prepareTranscriptForState: unknown agent type",
+			slog.String("session_id", state.SessionID),
+			slog.String("agent_type", string(state.AgentType)),
+			slog.Any("error", err),
+		)
+		return
+	}
+	prepareTranscriptIfNeeded(ctx, ag, state.TranscriptPath)
+}
+
 // prepareTranscriptIfNeeded calls PrepareTranscript for agents that implement
 // the TranscriptPreparer interface. This ensures transcript files exist before
 // they are read (e.g., OpenCode creates its transcript lazily via `opencode export`).
@@ -1431,7 +1442,7 @@ func prepareTranscriptIfNeeded(ctx context.Context, ag agent.Agent, transcriptPa
 	if ag == nil || transcriptPath == "" {
 		return
 	}
-	if preparer, ok := ag.(agent.TranscriptPreparer); ok {
+	if preparer, ok := agent.AsTranscriptPreparer(ag); ok {
 		// Best-effort: callers handle missing files gracefully.
 		// Transcript may not be available yet (e.g., agent not installed).
 		_ = preparer.PrepareTranscript(ctx, transcriptPath) //nolint:errcheck // Best-effort in hook path
