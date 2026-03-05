@@ -2,6 +2,7 @@ package external
 
 import (
 	"context"
+	"errors"
 	"io"
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
@@ -12,11 +13,14 @@ import (
 // interfaces (forwarding to the underlying external agent) plus CapabilityDeclarer.
 // The As* helpers in the agent package use DeclaredCapabilities() to gate access,
 // so callers only see capabilities the external binary actually declared.
-func Wrap(ea *Agent) agent.Agent {
+func Wrap(ea *Agent) (agent.Agent, error) {
+	if ea == nil {
+		return nil, errors.New("unable to wrap nil agent")
+	}
 	return &wrappedAgent{
 		ea:   ea,
 		caps: ea.info.Capabilities,
-	}
+	}, nil
 }
 
 // wrappedAgent forwards all agent.Agent and optional interface methods to the

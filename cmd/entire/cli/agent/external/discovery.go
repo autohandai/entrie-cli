@@ -79,7 +79,13 @@ func DiscoverAndRegister(ctx context.Context) {
 			}
 
 			// Wrap with capability interfaces and register
-			wrapped := Wrap(ea)
+			wrapped, err := Wrap(ea)
+			if err != nil {
+				logging.Debug(ctx, "skipping external agent (wrap failed)",
+					slog.String("binary", binPath),
+					slog.String("error", err.Error()))
+				continue
+			}
 			agent.Register(agentName, func() agent.Agent {
 				return wrapped
 			})

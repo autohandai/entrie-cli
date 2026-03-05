@@ -464,7 +464,10 @@ func TestWrap_HooksAndAnalyzer(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	wrapped := Wrap(ea)
+	wrapped, err := Wrap(ea)
+	if err != nil {
+		t.Fatalf("Wrap: %v", err)
+	}
 
 	// Should satisfy HookSupport
 	if _, ok := agent.AsHookSupport(wrapped); !ok {
@@ -511,7 +514,10 @@ func TestWrap_NoCapabilities(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	wrapped := Wrap(ea)
+	wrapped, err := Wrap(ea)
+	if err != nil {
+		t.Fatalf("Wrap: %v", err)
+	}
 
 	if _, ok := agent.AsHookSupport(wrapped); ok {
 		t.Error("Wrap() should not return HookSupport when hooks=false")
@@ -545,7 +551,10 @@ func TestWrap_HooksOnly(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	wrapped := Wrap(ea)
+	wrapped, err := Wrap(ea)
+	if err != nil {
+		t.Fatalf("Wrap: %v", err)
+	}
 
 	if _, ok := agent.AsHookSupport(wrapped); !ok {
 		t.Error("Wrap() should return HookSupport when hooks=true")
@@ -579,7 +588,10 @@ func TestWrap_PreparerOnly(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	wrapped := Wrap(ea)
+	wrapped, err := Wrap(ea)
+	if err != nil {
+		t.Fatalf("Wrap: %v", err)
+	}
 
 	if _, ok := agent.AsTranscriptPreparer(wrapped); !ok {
 		t.Error("Wrap() should return TranscriptPreparer when transcript_preparer=true")
@@ -616,7 +628,10 @@ func TestWrap_AnalyzerAndPreparer(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	wrapped := Wrap(ea)
+	wrapped, err := Wrap(ea)
+	if err != nil {
+		t.Fatalf("Wrap: %v", err)
+	}
 
 	if _, ok := agent.AsTranscriptAnalyzer(wrapped); !ok {
 		t.Error("Wrap() should return TranscriptAnalyzer when transcript_analyzer=true")
@@ -653,7 +668,10 @@ func TestWrap_HooksAnalyzerPreparer(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	wrapped := Wrap(ea)
+	wrapped, err := Wrap(ea)
+	if err != nil {
+		t.Fatalf("Wrap: %v", err)
+	}
 
 	if _, ok := agent.AsHookSupport(wrapped); !ok {
 		t.Error("Wrap() should return HookSupport when hooks=true")
