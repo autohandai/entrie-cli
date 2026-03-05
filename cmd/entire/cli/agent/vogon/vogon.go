@@ -44,6 +44,9 @@ func (v *Agent) ProtectedDirs() []string { return []string{".vogon"} }
 // DetectPresence returns false — vogon agent is never auto-detected.
 func (v *Agent) DetectPresence(_ context.Context) (bool, error) { return false, nil }
 
+// IsTestOnly marks this agent as test-only, excluding it from `entire enable`.
+func (v *Agent) IsTestOnly() bool { return true }
+
 // --- Transcript Storage ---
 
 func (v *Agent) ReadTranscript(sessionRef string) ([]byte, error) {
